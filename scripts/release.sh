@@ -77,6 +77,13 @@ for (const [file, transform] of files) {
 }
 NODE
 
+echo "==> Validate Claude plugin manifest"
+if ! command -v claude >/dev/null 2>&1; then
+  echo "ERROR: 'claude' CLI not found; cannot validate plugin manifest before release." >&2
+  exit 127
+fi
+claude plugin validate --strict "$ROOT"
+
 echo "==> Build and test"
 npm run build
 npm test

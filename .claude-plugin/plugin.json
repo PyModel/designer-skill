@@ -19,9 +19,6 @@
     "skill"
   ],
   "skills": "./skills/",
-  "mcpServers": "mcp.json",
-  "commands": [
-    "commands/designer-setup.md",
-    "commands/designer-status.md"
-  ]
+  "mcpServers": "./mcp.json",
+  "commands": "./commands/"
 }
