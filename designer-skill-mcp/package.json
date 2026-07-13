@@ -1,6 +1,6 @@
 {
   "name": "designer-skill-mcp",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "mcpName": "io.github.pythoughts-labs/designer-skill-mcp",
   "description": "Plug-and-play MCP that gives your coding agent UI superpowers: design tools, reference docs, and anti-slop checks.",
   "type": "module",
