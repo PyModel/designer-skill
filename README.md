@@ -8,18 +8,18 @@
 
 <br />
 
-[![plug_and_play](https://img.shields.io/badge/plug_&_play-zero_config-10b981?style=for-the-badge)](#setup)
-[![npm](https://img.shields.io/npm/v/@pymodel/designer-skill-mcp?style=for-the-badge&logo=npm&logoColor=white&color=0ea5e9)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
-[![downloads](https://img.shields.io/npm/dt/@pymodel/designer-skill-mcp?style=for-the-badge&logo=npm&logoColor=white&color=c9a84c&label=DOWNLOADS)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
-[![skills.sh](https://img.shields.io/badge/skills.sh-designer--skill-111827?style=for-the-badge)](https://skills.sh/pymodel/designer-skill)
-[![license](https://img.shields.io/badge/license-MIT-10b981?style=for-the-badge)](LICENSE)
+[![release](https://img.shields.io/npm/v/@pymodel/designer-skill-mcp?style=flat-square&label=release&color=4f46e5)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
+[![downloads](https://img.shields.io/npm/dt/@pymodel/designer-skill-mcp?style=flat-square&label=downloads&labelColor=000000&color=dfb317)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
+[![license](https://img.shields.io/badge/license-MIT-16a34a?style=flat-square)](LICENSE)
+[![skills.sh](https://img.shields.io/badge/skills.sh-designer--skill-111827?style=flat-square)](https://skills.sh/pymodel/designer-skill)
+[![visitors](https://komarev.com/ghpvc/?username=PyModel-designer-skill&label=visitors&color=4f46e5&style=flat-square)](https://github.com/PyModel/designer-skill)
 
 <br />
 
-[![agents](https://img.shields.io/badge/agents-8-7c3aed?style=for-the-badge)](#setup)
-[![references](https://img.shields.io/badge/references-15-e11d48?style=for-the-badge)](#reference)
-[![tools](https://img.shields.io/badge/MCP_tools-10-0ea5e9?style=for-the-badge)](#tools)
-[![detector](https://img.shields.io/badge/detector-44_rules-f59e0b?style=for-the-badge)](#tools)
+[![agents](https://img.shields.io/badge/agents-8-7c3aed?style=flat-square)](#setup)
+[![references](https://img.shields.io/badge/references-15-e11d48?style=flat-square)](#reference)
+[![tools](https://img.shields.io/badge/MCP_tools-10-0ea5e9?style=flat-square)](#tools)
+[![detector](https://img.shields.io/badge/detector-44_rules-f59e0b?style=flat-square)](#tools)
 
 <br />
 
