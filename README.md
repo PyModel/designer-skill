@@ -11,6 +11,7 @@
 [![plug_and_play](https://img.shields.io/badge/plug_&_play-zero_config-10b981?style=for-the-badge)](#setup)
 [![npm](https://img.shields.io/npm/v/designer-skill-mcp?style=for-the-badge&logo=npm&logoColor=white&color=0ea5e9)](https://www.npmjs.com/package/designer-skill-mcp)
 [![downloads](https://img.shields.io/npm/dt/designer-skill-mcp?style=for-the-badge&logo=npm&logoColor=white&color=c9a84c&label=DOWNLOADS)](https://www.npmjs.com/package/designer-skill-mcp)
+[![skills.sh](https://skills.sh/b/PyModel/designer-skill)](https://skills.sh/PyModel/designer-skill)
 [![license](https://img.shields.io/badge/license-MIT-10b981?style=for-the-badge)](LICENSE)
 
 <br />
@@ -103,6 +104,12 @@ Add the server. Ask in plain language. The agent handles the rest.
 [![setup](https://img.shields.io/badge/Setup-0ea5e9?style=for-the-badge)](#setup)
 
 </div>
+
+### Skills CLI
+
+```bash
+npx skills add PyModel/designer-skill --skill designer-skill
+```
 
 ### Plugin (recommended)
 
