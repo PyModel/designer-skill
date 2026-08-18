@@ -11,6 +11,8 @@ Before editing or generating any UI, layout, landing page, component, dashboard,
 1. Call `get_preflight_brief`.
 2. Call `commit_design_direction` and get **PASS** before writing code:
    - register: `brand` or `product`
+   - one-line design read: surface + audience + visual language
+   - design variance, motion intensity, and visual density: whole numbers from 1–10
    - aesthetic system (one per surface)
    - physical scene (one sentence)
    - layout families
