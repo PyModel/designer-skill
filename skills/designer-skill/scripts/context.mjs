@@ -31,7 +31,7 @@ const FALLBACK_DIRS = ['.agents/context', 'docs'];
 // silent on failure: a network problem, sandbox, or missing cache must never
 // block context output or print an error.
 
-const UPDATE_HOST = (process.env.DESIGNER_SKILL_UPDATE_HOST || 'https://github.com/Pythoughts-labs/designer-skill').replace(/\/$/, '');
+const UPDATE_HOST = (process.env.DESIGNER_SKILL_UPDATE_HOST || 'https://github.com/PyModel/designer-skill').replace(/\/$/, '');
 const UPDATE_CACHE_PATH =
   process.env.DESIGNER_SKILL_UPDATE_CACHE || path.join(os.homedir(), '.designer-skill', 'update-check.json');
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // throttle the network poll to once a day

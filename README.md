@@ -124,17 +124,17 @@ npx skills add PyModel/designer-skill --skill designer-skill
 One install gets both the skill and the MCP server:
 
 ```
-/plugin marketplace add Pythoughts-labs/designer-skill
-/plugin install designer-skill@pythoughts-labs
+/plugin marketplace add PyModel/designer-skill
+/plugin install designer-skill@pymodel
 ```
 
 Codex CLI:
 
 ```bash
-codex plugin marketplace add Pythoughts-labs/designer-skill
+codex plugin marketplace add PyModel/designer-skill
 ```
 
-Then install **designer-skill** from the **pythoughts-labs** marketplace in `/plugins`. The skill appears as `designer-skill:designer-skill`.
+Then install **designer-skill** from the **pymodel** marketplace in `/plugins`. The skill appears as `designer-skill:designer-skill`.
 
 **Cursor:** install from the marketplace (or open this repo). Plugin ships `mcp.json`, skills, and `/designer-setup` · `/designer-status` commands.
 
@@ -153,7 +153,7 @@ Same one-liner everywhere. No API key. Repo-root `mcp.json` is the canonical MCP
 }
 ```
 
-**Updates:** `@latest` for newest npm; pin @0.11.0 for teams. Plugin skill content updates separately (`/plugin update …`). Registry: `io.github.pythoughts-labs/designer-skill-mcp` (publish via `mcp-publisher` after npm release).
+**Updates:** `@latest` for newest npm; pin @0.11.0 for teams. Plugin skill content updates separately (`/plugin update …`). Registry: `io.github.pymodel/designer-skill-mcp` (publish via `mcp-publisher` after npm release).
 
 <div align="center">
 

@@ -71,8 +71,8 @@ Opt out: `NO_UPDATE_NOTIFIER=1`, `--no-update-notifier`, or configstore (`~/.con
 **Plugin installs** (Claude Code / Codex / Cursor) are separate from npm — bump the plugin version on release, then:
 
 ```bash
-/plugin marketplace update pythoughts-labs
-/plugin update designer-skill@pythoughts-labs
+/plugin marketplace update pymodel
+/plugin update designer-skill@pymodel
 ```
 
 Cursor: reinstall or update the plugin from marketplace; MCP args live in repo `mcp.json`.

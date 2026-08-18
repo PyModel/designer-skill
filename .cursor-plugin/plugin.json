@@ -4,11 +4,11 @@
   "version": "0.14.0",
   "description": "Plug-and-play MCP: UI superpowers, design references, anti-slop ship gate.",
   "author": {
-    "name": "Pythoughts Labs",
-    "url": "https://github.com/Pythoughts-labs"
+    "name": "PyModel",
+    "url": "https://github.com/PyModel"
   },
-  "homepage": "https://github.com/Pythoughts-labs/designer-skill",
-  "repository": "https://github.com/Pythoughts-labs/designer-skill",
+  "homepage": "https://github.com/PyModel/designer-skill",
+  "repository": "https://github.com/PyModel/designer-skill",
   "license": "MIT",
   "keywords": [
     "design",

@@ -12,4 +12,4 @@ npx -y designer-skill-mcp --check-update
 
 Report both lines to the user.
 
-**Updates:** MCP via `npx …@latest` or pin `@<semver>` in `mcp.json`. Plugin skill content via `/plugin update designer-skill@pythoughts-labs` (Claude/Codex) or reinstall the Cursor plugin.
+**Updates:** MCP via `npx …@latest` or pin `@<semver>` in `mcp.json`. Plugin skill content via `/plugin update designer-skill@pymodel` (Claude/Codex) or reinstall the Cursor plugin.

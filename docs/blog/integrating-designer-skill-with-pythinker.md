@@ -108,9 +108,9 @@ You'll need three things:
    ```bash
    pythinker --version
    ```
-   If you don't have it, install it from [pythoughts-labs/pythinker-code](https://pythoughts-labs.github.io/pythinker-code/) or via Homebrew:
+   If you don't have it, install it from [PyModel/pythinker-code](https://pymodel.github.io/pythinker-code/) or via Homebrew:
    ```bash
-   brew install pythoughts-labs/tap/pythinker
+   brew install pymodel/tap/pythinker
    ```
 
 2. **Node.js 18 or later** (only required because `designer-skill-mcp` runs over `npx`). Check with:
@@ -244,7 +244,7 @@ Then in `~/.pythinker/mcp.json`:
 
 > **The `npm run build` step is important.** It copies the canonical `designer-skill/` markdown content (the SKILL.md router and the ten reference files) into `assets/skill/` so the published package is self-contained.
 
-You can also clone the [GitHub repo](https://github.com/Pythoughts-labs/designer-skill) and build from source if you want to read the source first.
+You can also clone the [GitHub repo](https://github.com/PyModel/designer-skill) and build from source if you want to read the source first.
 
 ---
 
@@ -492,7 +492,7 @@ A: Yes — they're just markdown. If you install the package locally (Method 3),
 A: Yes. The skill is framework-agnostic. It gives principles (e.g. "use a 4pt spacing scale, weight 900 vs 200 for hierarchy, an OKLCH color ramp"). The agent translates those into whatever framework you use.
 
 **Q: Can I trust the npm package?**
-A: The package is published as [`designer-skill-mcp`](https://www.npmjs.com/package/designer-skill-mcp) under the MIT license. The source is at [github.com/Pythoughts-labs/designer-skill](https://github.com/Pythoughts-labs/designer-skill).
+A: The package is published as [`designer-skill-mcp`](https://www.npmjs.com/package/designer-skill-mcp) under the MIT license. The source is at [github.com/PyModel/designer-skill](https://github.com/PyModel/designer-skill).
 
 ---
 
@@ -511,9 +511,9 @@ The skill's job is to make "AI-made" a phrase your users never say. Now go ship 
 
 **Resources**
 
-- designer-skill repo: <https://github.com/Pythoughts-labs/designer-skill>
+- designer-skill repo: <https://github.com/PyModel/designer-skill>
 - npm package: <https://www.npmjs.com/package/designer-skill-mcp>
-- Pythinker docs: <https://pythoughts-labs.github.io/pythinker-code/>
+- Pythinker docs: <https://pymodel.github.io/pythinker-code/>
 - MCP spec: <https://modelcontextprotocol.io>
 
 **License:** MIT (designer-skill and this guide).

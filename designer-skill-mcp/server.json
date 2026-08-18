@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.pythoughts-labs/designer-skill-mcp",
+  "name": "io.github.pymodel/designer-skill-mcp",
   "description": "Plug-and-play MCP for UI design: references, intent dispatch, anti-slop detector, ship gate. No API key.",
   "repository": {
-    "url": "https://github.com/Pythoughts-labs/designer-skill",
+    "url": "https://github.com/PyModel/designer-skill",
     "source": "github"
   },
   "version": "0.14.0",

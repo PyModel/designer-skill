@@ -1,7 +1,7 @@
 {
   "name": "designer-skill-mcp",
   "version": "0.14.0",
-  "mcpName": "io.github.pythoughts-labs/designer-skill-mcp",
+  "mcpName": "io.github.pymodel/designer-skill-mcp",
   "description": "Plug-and-play MCP that gives your coding agent UI superpowers: design tools, reference docs, and anti-slop checks.",
   "type": "module",
   "bin": {
@@ -38,10 +38,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Pythoughts-labs/designer-skill.git",
+    "url": "git+https://github.com/PyModel/designer-skill.git",
     "directory": "designer-skill-mcp"
   },
-  "homepage": "https://github.com/Pythoughts-labs/designer-skill#readme",
+  "homepage": "https://github.com/PyModel/designer-skill#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "express": "^5.2.1",
