@@ -1,4 +1,4 @@
-# designer-skill-mcp
+# @pymodel/designer-skill-mcp
 
 Plug-and-play [MCP](https://modelcontextprotocol.io) server that gives your coding agent **UI superpowers**.
 
@@ -9,7 +9,7 @@ Add one line to your agent config. No API key. Your agent gets design tools, ref
   "mcpServers": {
     "designer-skill": {
       "command": "npx",
-      "args": ["-y", "designer-skill-mcp@latest"]
+      "args": ["-y", "@pymodel/designer-skill-mcp@latest"]
     }
   }
 }
@@ -48,7 +48,7 @@ npm install
 npm run build
 npm test
 node dist/index.js
-# or: npx -y designer-skill-mcp
+# or: npx -y @pymodel/designer-skill-mcp
 ```
 
 ## Version and updates
@@ -63,7 +63,7 @@ designer-skill-mcp --check-update   # query npm and print upgrade status
 Upgrade:
 
 ```bash
-npx -y designer-skill-mcp@latest
+npx -y @pymodel/designer-skill-mcp@latest
 ```
 
 Opt out: `NO_UPDATE_NOTIFIER=1`, `--no-update-notifier`, or configstore (`~/.config/configstore/update-notifier-designer-skill-mcp.json`).
@@ -71,8 +71,8 @@ Opt out: `NO_UPDATE_NOTIFIER=1`, `--no-update-notifier`, or configstore (`~/.con
 **Plugin installs** (Claude Code / Codex / Cursor) are separate from npm — bump the plugin version on release, then:
 
 ```bash
-/plugin marketplace update pythoughts-labs
-/plugin update designer-skill@pythoughts-labs
+/plugin marketplace update pymodel
+/plugin update designer-skill@pymodel
 ```
 
 Cursor: reinstall or update the plugin from marketplace; MCP args live in repo `mcp.json`.

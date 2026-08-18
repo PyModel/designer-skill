@@ -42,7 +42,7 @@ This is what the designer-skill repo calls **AI slop**: the average output that 
 
 This guide is the beginner's walkthrough: how to connect designer-skill to your Pythinker CLI, how to invoke it, and how to interpret what comes back.
 
-> **TL;DR.** Run one command (`pythinker mcp add --transport stdio designer-skill -- npx -y designer-skill-mcp`), restart Pythinker, and your agent now has a router to ten expert design references. You can ask it to design, audit, refactor, polish, or harden any UI with the same vocabulary a senior design engineer would use.
+> **TL;DR.** Run one command (`pythinker mcp add --transport stdio designer-skill -- npx -y @pymodel/designer-skill-mcp`), restart Pythinker, and your agent now has a router to ten expert design references. You can ask it to design, audit, refactor, polish, or harden any UI with the same vocabulary a senior design engineer would use.
 
 ---
 
@@ -108,9 +108,9 @@ You'll need three things:
    ```bash
    pythinker --version
    ```
-   If you don't have it, install it from [pythoughts-labs/pythinker-code](https://pythoughts-labs.github.io/pythinker-code/) or via Homebrew:
+   If you don't have it, install it from [PyModel/pythinker-code](https://pymodel.github.io/pythinker-code/) or via Homebrew:
    ```bash
-   brew install pythoughts-labs/tap/pythinker
+   brew install pymodel/tap/pythinker
    ```
 
 2. **Node.js 18 or later** (only required because `designer-skill-mcp` runs over `npx`). Check with:
@@ -119,7 +119,7 @@ You'll need three things:
    ```
    On macOS with Homebrew: `brew install node@20`.
 
-3. **An internet connection** for the first run (it will `npx -y designer-skill-mcp` and fetch the package from npm). After that, the package is cached locally.
+3. **An internet connection** for the first run (it will `npx -y @pymodel/designer-skill-mcp` and fetch the package from npm). After that, the package is cached locally.
 
 No API key required — all four tools serve markdown from the bundled skill files.
 
@@ -130,7 +130,7 @@ No API key required — all four tools serve markdown from the bundled skill fil
 Pythinker's MCP subsystem is managed by the `pythinker mcp` command group. Adding a new stdio server is one line:
 
 ```bash
-pythinker mcp add --transport stdio designer-skill -- npx -y designer-skill-mcp
+pythinker mcp add --transport stdio designer-skill -- npx -y @pymodel/designer-skill-mcp
 ```
 
 Let's break that command down so you understand what it does:
@@ -141,7 +141,7 @@ Let's break that command down so you understand what it does:
 | `--transport stdio` | The server will be launched as a child process; Pythinker talks to it over stdin/stdout. |
 | `designer-skill` | The name Pythinker will use to refer to this server. Tools get prefixed with `mcp_designer-skill_*`. |
 | `--` | Separator: everything after this is the actual command Pythinker will run. |
-| `npx -y designer-skill-mcp` | `npx` downloads and runs the package; `-y` auto-confirms the install prompt. |
+| `npx -y @pymodel/designer-skill-mcp` | `npx` downloads and runs the package; `-y` auto-confirms the install prompt. |
 
 After running it, you should see something like:
 
@@ -159,7 +159,7 @@ Expected output (your other servers will be listed too):
 
 ```
 MCP config file: /Users/you/.pythinker/mcp.json
-  designer-skill (stdio): npx -y designer-skill-mcp
+  designer-skill (stdio): npx -y @pymodel/designer-skill-mcp
 ```
 
 Restart Pythinker (or run `/mcp reconnect` inside the TUI) to load the new server.
@@ -187,7 +187,7 @@ It should look like this when you're done (yours may already have other servers 
   "mcpServers": {
     "designer-skill": {
       "command": "npx",
-      "args": ["-y", "designer-skill-mcp"]
+      "args": ["-y", "@pymodel/designer-skill-mcp"]
     }
   }
 }
@@ -211,7 +211,7 @@ No `env` block needed. Save, then restart Pythinker or run `/mcp reconnect` insi
 
 ## Method 3 — install the package locally (for the curious)
 
-The default `npx` approach downloads `designer-skill-mcp` from npm on every cold cache. That's fine for most people, but if you want to:
+The default `npx` approach downloads `@pymodel/designer-skill-mcp` from npm on every cold cache. That's fine for most people, but if you want to:
 
 - Pin a specific version
 - Audit the source
@@ -225,7 +225,7 @@ The default `npx` approach downloads `designer-skill-mcp` from npm on every cold
 mkdir -p ~/.local/share/designer-skill-mcp
 cd ~/.local/share/designer-skill-mcp
 npm init -y
-npm install designer-skill-mcp
+npm install @pymodel/designer-skill-mcp
 npm run build   # syncs the designer-skill/ files and compiles TypeScript
 ```
 
@@ -236,7 +236,7 @@ Then in `~/.pythinker/mcp.json`:
   "mcpServers": {
     "designer-skill": {
       "command": "node",
-      "args": ["/Users/you/.local/share/designer-skill-mcp/node_modules/designer-skill-mcp/dist/index.js"]
+      "args": ["/Users/you/.local/share/designer-skill-mcp/node_modules/@pymodel/designer-skill-mcp/dist/index.js"]
     }
   }
 }
@@ -244,7 +244,7 @@ Then in `~/.pythinker/mcp.json`:
 
 > **The `npm run build` step is important.** It copies the canonical `designer-skill/` markdown content (the SKILL.md router and the ten reference files) into `assets/skill/` so the published package is self-contained.
 
-You can also clone the [GitHub repo](https://github.com/Pythoughts-labs/designer-skill) and build from source if you want to read the source first.
+You can also clone the [GitHub repo](https://github.com/PyModel/designer-skill) and build from source if you want to read the source first.
 
 ---
 
@@ -432,7 +432,7 @@ Likely cause: the package can't be reached.
 
 ```bash
 # Run the command manually to see the actual error:
-npx -y designer-skill-mcp
+npx -y @pymodel/designer-skill-mcp
 ```
 
 If that fails:
@@ -467,7 +467,7 @@ Run `pythinker mcp list` to confirm the config path, validate JSON with `jq`, th
 pythinker mcp remove designer-skill
 ```
 
-To re-enable: `pythinker mcp add --transport stdio designer-skill -- npx -y designer-skill-mcp`.
+To re-enable: `pythinker mcp add --transport stdio designer-skill -- npx -y @pymodel/designer-skill-mcp`.
 
 ---
 
@@ -492,7 +492,7 @@ A: Yes — they're just markdown. If you install the package locally (Method 3),
 A: Yes. The skill is framework-agnostic. It gives principles (e.g. "use a 4pt spacing scale, weight 900 vs 200 for hierarchy, an OKLCH color ramp"). The agent translates those into whatever framework you use.
 
 **Q: Can I trust the npm package?**
-A: The package is published as [`designer-skill-mcp`](https://www.npmjs.com/package/designer-skill-mcp) under the MIT license. The source is at [github.com/Pythoughts-labs/designer-skill](https://github.com/Pythoughts-labs/designer-skill).
+A: The package is published as [`@pymodel/designer-skill-mcp`](https://www.npmjs.com/package/@pymodel/designer-skill-mcp) under the MIT license. The source is at [github.com/PyModel/designer-skill](https://github.com/PyModel/designer-skill).
 
 ---
 
@@ -511,9 +511,9 @@ The skill's job is to make "AI-made" a phrase your users never say. Now go ship 
 
 **Resources**
 
-- designer-skill repo: <https://github.com/Pythoughts-labs/designer-skill>
-- npm package: <https://www.npmjs.com/package/designer-skill-mcp>
-- Pythinker docs: <https://pythoughts-labs.github.io/pythinker-code/>
+- designer-skill repo: <https://github.com/PyModel/designer-skill>
+- npm package: <https://www.npmjs.com/package/@pymodel/designer-skill-mcp>
+- Pythinker docs: <https://pymodel.github.io/pythinker-code/>
 - MCP spec: <https://modelcontextprotocol.io>
 
 **License:** MIT (designer-skill and this guide).

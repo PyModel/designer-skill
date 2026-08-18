@@ -1,0 +1,16 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "Design",
+      "description": "UI design and visual asset skills.",
+      "skills": ["designer-skill", "raster-logo-svg"]
+    },
+    {
+      "title": "Maintainers",
+      "description": "Repository release workflows.",
+      "skills": ["release"]
+    }
+  ]
+}

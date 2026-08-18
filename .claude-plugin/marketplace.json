@@ -1,8 +1,8 @@
 {
-  "name": "pythoughts-labs",
+  "name": "pymodel",
   "owner": {
-    "name": "Pythoughts Labs",
-    "url": "https://github.com/Pythoughts-labs"
+    "name": "PyModel",
+    "url": "https://github.com/PyModel"
   },
   "metadata": {
     "description": "Plug-and-play MCP plugins that give coding agents UI superpowers."

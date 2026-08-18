@@ -135,6 +135,10 @@ describe("designer-skill MCP server", () => {
         name: "commit_design_direction",
         arguments: {
           register: "brand",
+          designRead: "Bakery ordering page for hurried local customers, with warm editorial utility",
+          designVariance: 7,
+          motionIntensity: 4,
+          visualDensity: 5,
           aesthetic: "minimalist",
           physicalScene: "Shop owner on a bright tablet at the counter during morning rush",
           layoutFamilies: ["asymmetric bento", "horizontal scroll rail"],
@@ -155,6 +159,10 @@ describe("designer-skill MCP server", () => {
         name: "commit_design_direction",
         arguments: {
           register: "brand",
+          designRead: "Team analytics page for operations leads, with a generic soft software language",
+          designVariance: 6,
+          motionIntensity: 4,
+          visualDensity: 5,
           aesthetic: "soft",
           physicalScene: "Team lead presenting quarterly results in a bright conference room",
           layoutFamilies: ["asymmetric bento", "split asymmetric"],

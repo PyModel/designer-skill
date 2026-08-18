@@ -15,6 +15,10 @@ export type AestheticSystem = (typeof AESTHETIC_SYSTEMS)[number];
 
 export interface DesignDirectionInput {
   register: Register;
+  designRead: string;
+  designVariance: number;
+  motionIntensity: number;
+  visualDensity: number;
   aesthetic: string;
   physicalScene: string;
   layoutFamilies: string[];
@@ -101,12 +105,27 @@ function failsInverseTest(description: string): string | null {
   return null;
 }
 
+function validateDial(name: string, value: number, fixes: string[]): void {
+  if (!Number.isInteger(value) || value < 1 || value > 10) {
+    fixes.push(`${name} must be a whole number from 1 to 10.`);
+  }
+}
+
 export function commitDesignDirection(input: DesignDirectionInput): DesignDirectionResult {
   const fixes: string[] = [];
 
   if (input.register !== "brand" && input.register !== "product") {
     fixes.push('register must be "brand" or "product".');
   }
+
+  const designRead = input.designRead?.trim() ?? "";
+  if (designRead.length < 40) {
+    fixes.push("designRead must state the surface, audience, and visual language in one concrete sentence (≥40 chars).");
+  }
+
+  validateDial("designVariance", input.designVariance, fixes);
+  validateDial("motionIntensity", input.motionIntensity, fixes);
+  validateDial("visualDensity", input.visualDensity, fixes);
 
   const aesthetic = normalizeAesthetic(input.aesthetic);
   if (!isValidAesthetic(aesthetic)) {
@@ -178,7 +197,7 @@ export function commitDesignDirection(input: DesignDirectionInput): DesignDirect
     status: "PASS",
     message:
       `Design direction committed. Proceed to dispatch_intent and load only task-relevant references.${refsTip}`,
-    direction: { ...input, aesthetic, layoutFamilies: layouts, antiSlopRisks: risks },
+    direction: { ...input, designRead, aesthetic, layoutFamilies: layouts, antiSlopRisks: risks },
   };
 }
 
