@@ -48,4 +48,4 @@ If the plugin did not wire MCP, add repo-root `mcp.json` (or `.cursor/mcp.json`)
 }
 ```
 
-Pin a version for teams: replace `@latest` with @0.11.0.
+Pin a version for teams: replace `@latest` with @0.15.0.
