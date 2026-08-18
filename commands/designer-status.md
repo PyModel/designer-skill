@@ -6,8 +6,8 @@ description: Print designer-skill-mcp version and npm update status
 # designer-skill Status
 
 ```bash
-npx -y designer-skill-mcp --version
-npx -y designer-skill-mcp --check-update
+npx -y @pymodel/designer-skill-mcp --version
+npx -y @pymodel/designer-skill-mcp --check-update
 ```
 
 Report both lines to the user.

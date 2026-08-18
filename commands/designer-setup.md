@@ -8,7 +8,7 @@ description: Verify designer-skill MCP is installed and reachable
 ## Step 1: Check MCP package
 
 ```bash
-npx -y designer-skill-mcp --version
+npx -y @pymodel/designer-skill-mcp --version
 ```
 
 If this prints a version, the npm package resolves. If not, check Node.js (18+) and network access.
@@ -20,7 +20,7 @@ In Cursor: **Settings → Tools & MCP** — confirm `designer-skill` is listed a
 Or test from the shell:
 
 ```bash
-npx -y designer-skill-mcp --check-update
+npx -y @pymodel/designer-skill-mcp --check-update
 ```
 
 ## Step 3: Smoke test
@@ -42,7 +42,7 @@ If the plugin did not wire MCP, add repo-root `mcp.json` (or `.cursor/mcp.json`)
   "mcpServers": {
     "designer-skill": {
       "command": "npx",
-      "args": ["-y", "designer-skill-mcp@latest"]
+      "args": ["-y", "@pymodel/designer-skill-mcp@latest"]
     }
   }
 }

@@ -3,7 +3,7 @@ import { pkg } from "./pkg.js";
 
 const WEEK_MS = 1000 * 60 * 60 * 24 * 7;
 
-const UPGRADE_COMMAND = "npx -y designer-skill-mcp@latest";
+const UPGRADE_COMMAND = "npx -y @pymodel/designer-skill-mcp@latest";
 
 function createNotifier() {
   return updateNotifier({

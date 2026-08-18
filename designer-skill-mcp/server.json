@@ -10,7 +10,7 @@
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "designer-skill-mcp",
+      "identifier": "@pymodel/designer-skill-mcp",
       "version": "0.14.0",
       "transport": {
         "type": "stdio"

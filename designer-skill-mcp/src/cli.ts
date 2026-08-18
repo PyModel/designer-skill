@@ -39,7 +39,7 @@ Flags:
   --help, -h             Show this help
 
 Upgrade:
-  npx -y designer-skill-mcp@latest
+  npx -y @pymodel/designer-skill-mcp@latest
 
 Opt out of update checks globally:
   NO_UPDATE_NOTIFIER=1

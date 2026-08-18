@@ -9,8 +9,8 @@
 <br />
 
 [![plug_and_play](https://img.shields.io/badge/plug_&_play-zero_config-10b981?style=for-the-badge)](#setup)
-[![npm](https://img.shields.io/npm/v/designer-skill-mcp?style=for-the-badge&logo=npm&logoColor=white&color=0ea5e9)](https://www.npmjs.com/package/designer-skill-mcp)
-[![downloads](https://img.shields.io/npm/dt/designer-skill-mcp?style=for-the-badge&logo=npm&logoColor=white&color=c9a84c&label=DOWNLOADS)](https://www.npmjs.com/package/designer-skill-mcp)
+[![npm](https://img.shields.io/npm/v/@pymodel/designer-skill-mcp?style=for-the-badge&logo=npm&logoColor=white&color=0ea5e9)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
+[![downloads](https://img.shields.io/npm/dt/@pymodel/designer-skill-mcp?style=for-the-badge&logo=npm&logoColor=white&color=c9a84c&label=DOWNLOADS)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
 [![skills.sh](https://img.shields.io/badge/skills.sh-designer--skill-111827?style=for-the-badge)](https://skills.sh/pymodel/designer-skill)
 [![license](https://img.shields.io/badge/license-MIT-10b981?style=for-the-badge)](LICENSE)
 
@@ -26,7 +26,7 @@
 [Overview](#overview) · [Setup](#setup) · [Reference](#reference) · [Tools](#tools) · [Development](#development)
 
 ```bash
-npm i designer-skill-mcp
+npm i @pymodel/designer-skill-mcp
 ```
 
 </div>
@@ -147,7 +147,7 @@ Same one-liner everywhere. No API key. Repo-root `mcp.json` is the canonical MCP
   "mcpServers": {
     "designer-skill": {
       "command": "npx",
-      "args": ["-y", "designer-skill-mcp@latest"]
+      "args": ["-y", "@pymodel/designer-skill-mcp@latest"]
     }
   }
 }
@@ -176,9 +176,9 @@ Same one-liner everywhere. No API key. Repo-root `mcp.json` is the canonical MCP
 </tr>
 </thead>
 <tbody>
-<tr><td bgcolor="#f0f9ff"><b>Pythinker</b></td><td bgcolor="#f8fafc"><code>pythinker mcp add --transport stdio designer-skill -- npx -y designer-skill-mcp</code> · <a href="docs/blog/integrating-designer-skill-with-pythinker.md">guide</a></td></tr>
-<tr><td bgcolor="#ecfdf5"><b>Codex CLI</b></td><td bgcolor="#f8fafc"><code>codex mcp add designer-skill -- npx -y designer-skill-mcp</code></td></tr>
-<tr><td bgcolor="#faf5ff"><b>Claude Code</b></td><td bgcolor="#f8fafc"><code>claude mcp add designer-skill -- npx -y designer-skill-mcp</code></td></tr>
+<tr><td bgcolor="#f0f9ff"><b>Pythinker</b></td><td bgcolor="#f8fafc"><code>pythinker mcp add --transport stdio designer-skill -- npx -y @pymodel/designer-skill-mcp</code> · <a href="docs/blog/integrating-designer-skill-with-pythinker.md">guide</a></td></tr>
+<tr><td bgcolor="#ecfdf5"><b>Codex CLI</b></td><td bgcolor="#f8fafc"><code>codex mcp add designer-skill -- npx -y @pymodel/designer-skill-mcp</code></td></tr>
+<tr><td bgcolor="#faf5ff"><b>Claude Code</b></td><td bgcolor="#f8fafc"><code>claude mcp add designer-skill -- npx -y @pymodel/designer-skill-mcp</code></td></tr>
 <tr><td bgcolor="#f1f5f9"><b>Cursor</b></td><td bgcolor="#f8fafc">Cursor plugin or copy <code>mcp.json</code> → <code>.cursor/mcp.json</code></td></tr>
 <tr><td bgcolor="#eff6ff"><b>VS Code</b></td><td bgcolor="#f8fafc"><code>.vscode/mcp.json</code> (<code>"servers"</code> + <code>"type": "stdio"</code>)</td></tr>
 <tr><td bgcolor="#fdf4ff"><b>Kilo Code</b></td><td bgcolor="#f8fafc">MCP Settings → <code>mcp_settings.json</code></td></tr>
@@ -193,7 +193,7 @@ Same one-liner everywhere. No API key. Repo-root `mcp.json` is the canonical MCP
 **Pythinker** (`~/.pythinker/mcp.json`)
 
 ```json
-{ "mcpServers": { "designer-skill": { "command": "npx", "args": ["-y", "designer-skill-mcp@latest"] } } }
+{ "mcpServers": { "designer-skill": { "command": "npx", "args": ["-y", "@pymodel/designer-skill-mcp@latest"] } } }
 ```
 
 Verify: `pythinker mcp test designer-skill` · TUI: `/mcp` lists the server, `/tools` shows `mcp_designer-skill_*`.
@@ -203,13 +203,13 @@ Verify: `pythinker mcp test designer-skill` · TUI: `/mcp` lists the server, `/t
 ```toml
 [mcp_servers.designer-skill]
 command = "npx"
-args = ["-y", "designer-skill-mcp"]
+args = ["-y", "@pymodel/designer-skill-mcp"]
 ```
 
 **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`)
 
 ```json
-{ "mcpServers": { "designer-skill": { "command": "npx", "args": ["-y", "designer-skill-mcp@latest"] } } }
+{ "mcpServers": { "designer-skill": { "command": "npx", "args": ["-y", "@pymodel/designer-skill-mcp@latest"] } } }
 ```
 
 **Cursor** (`.cursor/mcp.json` — same shape as repo-root `mcp.json`)
@@ -222,7 +222,7 @@ args = ["-y", "designer-skill-mcp"]
     "designer-skill": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "designer-skill-mcp"]
+      "args": ["-y", "@pymodel/designer-skill-mcp"]
     }
   }
 }
@@ -235,7 +235,7 @@ args = ["-y", "designer-skill-mcp"]
   "mcpServers": {
     "designer-skill": {
       "command": "npx",
-      "args": ["-y", "designer-skill-mcp"],
+      "args": ["-y", "@pymodel/designer-skill-mcp"],
       "disabled": false,
       "alwaysAllow": []
     }
@@ -250,7 +250,7 @@ args = ["-y", "designer-skill-mcp"]
   "mcp": {
     "designer-skill": {
       "type": "local",
-      "command": ["npx", "-y", "designer-skill-mcp"]
+      "command": ["npx", "-y", "@pymodel/designer-skill-mcp"]
     }
   }
 }

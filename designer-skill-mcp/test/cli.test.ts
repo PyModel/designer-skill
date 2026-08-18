@@ -47,15 +47,15 @@ describe("parseCli", () => {
 
 describe("formatUpdateStatus", () => {
   it("reports latest when versions match", () => {
-    expect(formatUpdateStatus({ name: "designer-skill-mcp", current: "0.9.0", latest: "0.9.0", type: "latest" })).toBe(
+    expect(formatUpdateStatus({ name: "@pymodel/designer-skill-mcp", current: "0.9.0", latest: "0.9.0", type: "latest" })).toBe(
       "0.9.0 (latest)",
     );
   });
 
   it("reports upgrade path when a newer version exists", () => {
     expect(
-      formatUpdateStatus({ name: "designer-skill-mcp", current: "0.8.0", latest: "0.9.0", type: "minor" }),
-    ).toBe("0.8.0 → 0.9.0 available (minor)\nRun: npx -y designer-skill-mcp@latest");
+      formatUpdateStatus({ name: "@pymodel/designer-skill-mcp", current: "0.8.0", latest: "0.9.0", type: "minor" }),
+    ).toBe("0.8.0 → 0.9.0 available (minor)\nRun: npx -y @pymodel/designer-skill-mcp@latest");
   });
 });
 
