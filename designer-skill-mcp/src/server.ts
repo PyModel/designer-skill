@@ -94,9 +94,31 @@ export function createServer(): McpServer {
     {
       title: "Commit design direction before code",
       description:
-        "Required checkpoint before writing UI code. Submit register, aesthetic system, physical scene, layout families, typography direction, anti-slop risks, and inverse-test result. Returns PASS (proceed) or FAIL (fix and resubmit).",
+        "Required checkpoint before writing UI code. Submit a one-line design read, three calibration dials, register, aesthetic system, physical scene, layout families, typography direction, anti-slop risks, and inverse-test result. Returns PASS (proceed) or FAIL (fix and resubmit).",
       inputSchema: {
         register: z.enum(["brand", "product"]).describe("brand = distinctiveness bar; product = earned familiarity bar."),
+        designRead: z
+          .string()
+          .min(40)
+          .describe("One sentence naming the surface, audience, and intended visual language."),
+        designVariance: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .describe("1 = strict symmetry and convention; 10 = expressive, off-grid composition."),
+        motionIntensity: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .describe("1 = static; 10 = cinematic or physics-led. Accessibility still overrides the dial."),
+        visualDensity: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .describe("1 = gallery-like and airy; 10 = compact, information-dense cockpit."),
         aesthetic: z
           .string()
           .min(1)
