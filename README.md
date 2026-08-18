@@ -11,7 +11,7 @@
 [![release](https://img.shields.io/npm/v/@pymodel/designer-skill-mcp?style=flat-square&label=release&color=4f46e5)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
 [![downloads](https://img.shields.io/npm/dt/@pymodel/designer-skill-mcp?style=flat-square&label=downloads&labelColor=000000&color=dfb317)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
 [![license](https://img.shields.io/badge/license-MIT-16a34a?style=flat-square)](LICENSE)
-[![skills.sh](https://img.shields.io/badge/skills.sh-designer--skill-111827?style=flat-square)](https://skills.sh/pymodel/designer-skill)
+[![skills.sh](https://skills.sh/b/pymodel/designer-skill)](https://skills.sh/pymodel/designer-skill)
 [![visitors](https://komarev.com/ghpvc/?username=PyModel-designer-skill&label=visitors&color=4f46e5&style=flat-square)](https://github.com/PyModel/designer-skill)
 
 <br />
