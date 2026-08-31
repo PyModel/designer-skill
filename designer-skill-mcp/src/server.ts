@@ -8,7 +8,10 @@ import {
   isReferenceName,
   REFERENCE_NAMES,
   REFERENCE_DESCRIPTIONS,
-  type ReferenceName,
+  UX_REFERENCE_NAMES,
+  UX_REFERENCE_DESCRIPTIONS,
+  ALL_REFERENCE_NAMES,
+  type ReferenceId,
 } from "./skill.js";
 import { dispatchIntent } from "./dispatch.js";
 import { listCommands, formatCommandHelp, getCommandReads } from "./commands.js";
@@ -54,23 +57,26 @@ export function createServer(): McpServer {
     "designer-reference",
     new ResourceTemplate("designer://reference/{name}", {
       list: async () => ({
-        resources: REFERENCE_NAMES.map((name) => ({
+        resources: ALL_REFERENCE_NAMES.map((name) => ({
           uri: `designer://reference/${name}`,
           name,
-          description: REFERENCE_DESCRIPTIONS[name],
+          description:
+            name in REFERENCE_DESCRIPTIONS
+              ? REFERENCE_DESCRIPTIONS[name as keyof typeof REFERENCE_DESCRIPTIONS]
+              : UX_REFERENCE_DESCRIPTIONS[name as keyof typeof UX_REFERENCE_DESCRIPTIONS],
           mimeType: "text/markdown",
         })),
       }),
     }),
     {
-      title: "designer-skill reference",
-      description: "One of the fifteen designer-skill reference files.",
+      title: "designer-skill reference / ux-designer reference",
+      description: "One of the reference files across the designer-skill and ux-designer modules.",
       mimeType: "text/markdown",
     },
     async (uri, variables) => {
       const name = String(variables.name);
       if (!isReferenceName(name)) {
-        throw new Error(`Unknown reference "${name}". Valid: ${REFERENCE_NAMES.join(", ")}.`);
+        throw new Error(`Unknown reference "${name}". Valid: ${ALL_REFERENCE_NAMES.join(", ")}.`);
       }
       return {
         contents: [{ uri: uri.href, mimeType: "text/markdown", text: getReferenceDoc(name) }],
@@ -168,11 +174,11 @@ export function createServer(): McpServer {
   server.registerTool(
     "get_reference",
     {
-      title: "Get a designer-skill reference file",
-      description: `Returns the full text of one designer-skill reference file. Valid names: ${REFERENCE_NAMES.join(", ")}.`,
-      inputSchema: { name: z.enum(REFERENCE_NAMES) },
+      title: "Get a designer-skill or ux-designer reference file",
+      description: `Returns the full text of one reference file (designer-skill or ux-designer, ux files are namespaced ux/…). Valid names: ${ALL_REFERENCE_NAMES.join(", ")}.`,
+      inputSchema: { name: z.enum(ALL_REFERENCE_NAMES) },
     },
-    async ({ name }) => ({ content: [{ type: "text", text: getReferenceDoc(name as ReferenceName) }] }),
+    async ({ name }) => ({ content: [{ type: "text", text: getReferenceDoc(name as ReferenceId) }] }),
   );
 
   server.registerTool(
@@ -311,7 +317,7 @@ export function createServer(): McpServer {
       },
     },
     ({ task, aesthetic }) => {
-      const reads = new Set<ReferenceName>(dispatchIntent(task).recommendedReads);
+      const reads = new Set<ReferenceId>(dispatchIntent(task).recommendedReads);
       reads.add("design-principles");
       reads.add("avoid-ai-slop");
       reads.add("differentiation-playbook");

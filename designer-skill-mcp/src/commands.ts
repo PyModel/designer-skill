@@ -2,7 +2,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ReferenceName } from "./skill.js";
+import type { ReferenceId } from "./skill.js";
 
 export interface CommandMeta {
   description: string;
@@ -39,13 +39,13 @@ export const COMMAND_ALIASES: Record<string, string> = {
 };
 
 /** Maps a design verb to the reference file(s) an agent should read. */
-export const COMMAND_READS: Record<string, ReferenceName[]> = {
+export const COMMAND_READS: Record<string, ReferenceId[]> = {
   setup: ["project-init"],
   plan: ["design-principles", "aesthetic-systems", "differentiation-playbook"],
   build: ["craft-flow", "design-principles", "aesthetic-systems", "differentiation-playbook", "engineering-and-performance", "avoid-ai-slop"],
   preview: ["live-mode"],
   spec: ["refactor-and-redesign"],
-  check: ["engineering-and-performance", "avoid-ai-slop", "refactor-and-redesign"],
+  check: ["engineering-and-performance", "avoid-ai-slop", "refactor-and-redesign", "ux/03-accessibility"],
   review: ["design-principles", "avoid-ai-slop", "visual-critique"],
   finish: ["design-principles", "engineering-and-performance"],
   amplify: ["aesthetic-systems", "differentiation-playbook", "avoid-ai-slop"],
@@ -56,18 +56,18 @@ export const COMMAND_READS: Record<string, ReferenceName[]> = {
   layout: ["design-principles"],
   type: ["design-principles"],
   color: ["design-principles", "aesthetic-systems"],
-  ship: ["engineering-and-performance"],
-  speed: ["engineering-and-performance"],
+  ship: ["engineering-and-performance", "ux/23-internationalization"],
+  speed: ["engineering-and-performance", "ux/22-performance-ux"],
   simplify: ["design-principles"],
   tokens: ["engineering-and-performance", "design-systems"],
   brand: ["aesthetic-systems", "differentiation-playbook", "avoid-ai-slop"],
-  responsive: ["engineering-and-performance", "refactor-and-redesign"],
+  responsive: ["engineering-and-performance", "refactor-and-redesign", "ux/08-mobile-ux"],
   refresh: ["refactor-and-redesign", "avoid-ai-slop"],
-  copy: ["command-playbook", "avoid-ai-slop"],
-  onboard: ["command-playbook", "engineering-and-performance"],
+  copy: ["command-playbook", "avoid-ai-slop", "ux/09-ux-writing"],
+  onboard: ["command-playbook", "engineering-and-performance", "ux/16-onboarding"],
   options: ["refactor-and-redesign", "differentiation-playbook", "avoid-ai-slop"],
-  form: ["interaction-design", "engineering-and-performance"],
-  nav: ["interaction-design", "design-principles"],
+  form: ["interaction-design", "engineering-and-performance", "ux/07-forms-and-inputs"],
+  nav: ["interaction-design", "design-principles", "ux/05-information-architecture"],
   states: ["interaction-design", "engineering-and-performance"],
   tone: ["interaction-design", "motion-and-interaction"],
   system: ["design-systems", "engineering-and-performance"],
@@ -110,7 +110,7 @@ export function listCommands(): { verb: string; description: string; argumentHin
   }));
 }
 
-export function getCommandReads(verb: string): ReferenceName[] {
+export function getCommandReads(verb: string): ReferenceId[] {
   const { canonical } = resolveCommandVerb(verb);
   const reads = COMMAND_READS[canonical];
   if (!reads) return ["command-playbook", "design-principles"];
@@ -131,7 +131,7 @@ export function formatCommandHelp(verb: string): string {
     meta.description,
     meta.argumentHint ? `\nArgument hint: \`${meta.argumentHint}\`` : "",
     "",
-    `Read before acting: ${reads.map((r) => `reference/${r}.md`).join(", ")}`,
+    `Read before acting: ${reads.join(", ")}`,
     "",
     "Always run the anti-slop ship gate (`anti_slop_checklist` or `reference/avoid-ai-slop.md`) before declaring UI work done.",
   ];

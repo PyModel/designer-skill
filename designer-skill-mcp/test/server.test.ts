@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer, SERVER_INSTRUCTIONS } from "../src/server.js";
 import { dispatchIntent } from "../src/dispatch.js";
-import { REFERENCE_NAMES } from "../src/skill.js";
+import { REFERENCE_NAMES, UX_REFERENCE_NAMES } from "../src/skill.js";
 
 async function connectClient(): Promise<Client> {
   const server = createServer();
@@ -210,10 +210,13 @@ describe("designer-skill MCP server", () => {
     expect(text).toContain("Avoiding AI Slop");
   });
 
-  it("exposes the skill router resource and all fifteen reference resources", async () => {
+  it("exposes the skill router resource and all reference resources", async () => {
     const uris = (await client.listResources()).resources.map((r) => r.uri);
     expect(uris).toContain("designer://skill");
     for (const name of REFERENCE_NAMES) {
+      expect(uris).toContain(`designer://reference/${name}`);
+    }
+    for (const name of UX_REFERENCE_NAMES) {
       expect(uris).toContain(`designer://reference/${name}`);
     }
   });

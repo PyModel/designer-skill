@@ -1,6 +1,7 @@
-// Loads the bundled designer-skill markdown (SKILL.md + 10 reference files) and
-// caches it. Resolves to the packaged copy (assets/skill) first, falling back to
-// the sibling skills/designer-skill/ folder in local development.
+// Loads the bundled designer-skill and ux-designer markdown (SKILL.md + reference
+// files) and caches it. Resolves to the packaged copies (assets/skill +
+// assets/ux-designer) first, falling back to the sibling skills/ folders in local
+// development.
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,33 +59,111 @@ export const REFERENCE_DESCRIPTIONS: Record<ReferenceName, string> = {
     "Modern CSS implementation cookbook: resets, box-sizing, centering, aspect-ratio, :is()/:not(), logical properties, container queries, :has(), @layer, clamp(), Baseline-bucketed features. The how-to for applying CSS fixes.",
 };
 
-function resolveSkillDir(): string {
+// ux-designer reference files, namespaced under "ux/" to keep the two modules'
+// registries disjoint. Files live in the ux-designer skill's own references/ dir.
+export const UX_REFERENCE_NAMES = [
+  "ux/01-core-principles",
+  "ux/02-laws-of-ux",
+  "ux/03-accessibility",
+  "ux/04-visual-design",
+  "ux/05-information-architecture",
+  "ux/06-interaction-design",
+  "ux/07-forms-and-inputs",
+  "ux/08-mobile-ux",
+  "ux/09-ux-writing",
+  "ux/10-user-research",
+  "ux/11-design-systems",
+  "ux/12a-presence-awareness",
+  "ux/12b-conflict-resolution-sync",
+  "ux/13a-canvas-navigation",
+  "ux/13b-canvas-objects-performance",
+  "ux/14-ai-ux-patterns",
+  "ux/15-ethical-design",
+  "ux/16-onboarding",
+  "ux/17-notifications",
+  "ux/18-data-visualization",
+  "ux/19-search-ux",
+  "ux/20-emotional-design",
+  "ux/21-data-tables",
+  "ux/22-performance-ux",
+  "ux/23-internationalization",
+  "ux/24-voice-and-multimodal",
+] as const;
+
+export type UxReferenceName = (typeof UX_REFERENCE_NAMES)[number];
+
+export const UX_REFERENCE_DESCRIPTIONS: Record<UxReferenceName, string> = {
+  "ux/01-core-principles": "Core UX heuristics: user-centered design, calm & clarity, hierarchy of needs.",
+  "ux/02-laws-of-ux": "Laws of UX quick reference: Fitts, Hick, Miller, Jakob's Law, aesthetic-usability effect.",
+  "ux/03-accessibility": "WCAG 2.2 AA compliance: keyboard, focus, contrast, screen readers, EN 301 549 / EAA.",
+  "ux/04-visual-design": "Visual design patterns: dominance, typography, contrast, spacing scales, consistency.",
+  "ux/05-information-architecture": "IA: navigation models, 7±2 rule, wayfinding, sitemaps, content structure.",
+  "ux/06-interaction-design": "Interaction patterns: touch targets, feedback, states, gestures, 100ms response.",
+  "ux/07-forms-and-inputs": "Form design: inline validation, error messages, field grouping, multi-step flows.",
+  "ux/08-mobile-ux": "Mobile UX: thumb zones, bottom navigation, viewport constraints, touch ergonomics.",
+  "ux/09-ux-writing": "UX writing and microcopy: action labels, error copy, tone of voice, string guidelines.",
+  "ux/10-user-research": "User research methods: interviews, usability tests, surveys, success metrics.",
+  "ux/11-design-systems": "Design system creation: foundations, components, tokens, governance, documentation.",
+  "ux/12a-presence-awareness": "Collaborative presence: live cursors, avatars, typing indicators, awareness without noise.",
+  "ux/12b-conflict-resolution-sync": "Real-time sync UX: conflict resolution, offline state, undo/redo, sharing, permissions.",
+  "ux/13a-canvas-navigation": "Canvas apps: cursor-centered zoom, pan, minimap, keyboard navigation, viewport culling.",
+  "ux/13b-canvas-objects-performance": "Canvas objects & performance: layers, selection, smart guides, snapping, 60fps pan/zoom.",
+  "ux/14-ai-ux-patterns": "AI interface design: chat, copilots, agents, generative UI, labeling, attribution, undo.",
+  "ux/15-ethical-design": "Ethical design: dark-pattern avoidance, consent symmetry, confirmshaming, trust.",
+  "ux/16-onboarding": "Onboarding and activation: first-run, empty states, aha moment, skippable tours.",
+  "ux/17-notifications": "Notifications & attention: severity mapping, permission timing, toasts, channels.",
+  "ux/18-data-visualization": "Data visualization: chart choice, dashboards, colorblind-safe palettes, Tufte principles.",
+  "ux/19-search-ux": "Search UX: autocomplete, result ranking, filters, empty results, >70% success bar.",
+  "ux/20-emotional-design": "Emotional design: delight, trust-building, personality, error recovery warmth.",
+  "ux/21-data-tables": "Data tables: columns, sortable lists, pagination, bulk actions, infinite scroll context.",
+  "ux/22-performance-ux": "Perceived performance: loading states, skeletons, optimistic updates, CWV.",
+  "ux/23-internationalization": "i18n & RTL: text expansion, logical properties, Intl formatting, pluralization, endonyms.",
+  "ux/24-voice-and-multimodal": "Voice & multimodal input: fallbacks, recognition feedback, cross-device flows.",
+};
+
+export const ALL_REFERENCE_NAMES = [...REFERENCE_NAMES, ...UX_REFERENCE_NAMES] as const;
+
+export type ReferenceId = ReferenceName | UxReferenceName;
+
+function resolveSkillDirs(): { skillDir: string; uxDir: string } {
   const here = dirname(fileURLToPath(import.meta.url)); // dist/ (built) or src/ (tsx/vitest)
   const pkgRoot = resolve(here, "..");
-  const bundled = join(pkgRoot, "assets", "skill");
-  if (existsSync(join(bundled, "SKILL.md"))) return bundled;
-  const dev = resolve(pkgRoot, "..", "skills", "designer-skill");
-  if (existsSync(join(dev, "SKILL.md"))) return dev;
+  const bundledSkill = join(pkgRoot, "assets", "skill");
+  const bundledUx = join(pkgRoot, "assets", "ux-designer");
+  if (existsSync(join(bundledSkill, "SKILL.md")) && existsSync(join(bundledUx, "SKILL.md"))) {
+    return { skillDir: bundledSkill, uxDir: bundledUx };
+  }
+  const devSkill = resolve(pkgRoot, "..", "skills", "designer-skill");
+  const devUx = resolve(pkgRoot, "..", "skills", "ux-designer");
+  if (existsSync(join(devSkill, "SKILL.md")) && existsSync(join(devUx, "SKILL.md"))) {
+    return { skillDir: devSkill, uxDir: devUx };
+  }
   throw new Error(
-    `designer-skill content not found. Looked in:\n  ${bundled}\n  ${dev}\nRun "npm run sync-skill" to bundle it.`,
+    `designer-skill content not found. Looked in:\n  ${bundledSkill} + ${bundledUx}\n  ${devSkill} + ${devUx}\nRun "npm run sync-skill" to bundle it.`,
   );
 }
 
 interface SkillCache {
   router: string;
-  refs: Map<ReferenceName, string>;
+  refs: Map<ReferenceId, string>;
 }
 
 let cache: SkillCache | null = null;
 
 function load(): SkillCache {
   if (cache) return cache;
-  const dir = resolveSkillDir();
-  const router = readFileSync(join(dir, "SKILL.md"), "utf8");
-  const refs = new Map<ReferenceName, string>();
+  const { skillDir, uxDir } = resolveSkillDirs();
+  const router = readFileSync(join(skillDir, "SKILL.md"), "utf8");
+  const refs = new Map<ReferenceId, string>();
   for (const name of REFERENCE_NAMES) {
-    const p = join(dir, "reference", `${name}.md`);
+    const p = join(skillDir, "reference", `${name}.md`);
     if (!existsSync(p)) throw new Error(`Missing designer-skill reference file: ${p}`);
+    refs.set(name, readFileSync(p, "utf8"));
+  }
+  for (const name of UX_REFERENCE_NAMES) {
+    const file = name.slice("ux/".length);
+    const p = join(uxDir, "references", `${file}.md`);
+    if (!existsSync(p)) throw new Error(`Missing ux-designer reference file: ${p}`);
     refs.set(name, readFileSync(p, "utf8"));
   }
   cache = { router, refs };
@@ -95,12 +174,12 @@ export function getSkillRouter(): string {
   return load().router;
 }
 
-export function getReferenceDoc(name: ReferenceName): string {
+export function getReferenceDoc(name: ReferenceId): string {
   const doc = load().refs.get(name);
   if (doc === undefined) throw new Error(`Unknown reference "${name}".`);
   return doc;
 }
 
-export function isReferenceName(value: string): value is ReferenceName {
-  return (REFERENCE_NAMES as readonly string[]).includes(value);
+export function isReferenceName(value: string): value is ReferenceId {
+  return (ALL_REFERENCE_NAMES as readonly string[]).includes(value);
 }

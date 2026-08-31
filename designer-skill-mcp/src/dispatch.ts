@@ -1,11 +1,12 @@
 // Deterministic intent -> verb -> reference-file routing. Mirrors the
 // command-playbook dispatch table. No LLM; pure keyword scoring.
-import type { ReferenceName } from "./skill.js";
+// Designer-skill verbs may cross-link ux-designer references (ux/…).
+import type { ReferenceId } from "./skill.js";
 
 interface Verb {
   verb: string;
   cues: string[];
-  files: ReferenceName[];
+  files: ReferenceId[];
   note: string;
 }
 
@@ -36,8 +37,8 @@ const VERBS: Verb[] = [
   },
   {
     verb: "check",
-    cues: ["check", "audit", "review the", "review my", "check the", "a11y", "accessibility", "performance review", "responsive check", "lighthouse"],
-    files: ["engineering-and-performance", "avoid-ai-slop", "refactor-and-redesign", "css-techniques"],
+    cues: ["check", "audit", "review the", "review my", "check the", "a11y", "accessibility", "performance review", "responsive check", "lighthouse", "wcag", "eaa", "screen reader"],
+    files: ["engineering-and-performance", "avoid-ai-slop", "refactor-and-redesign", "css-techniques", "ux/03-accessibility"],
     note: "Technical audit (a11y, perf, responsive, CSS anti-patterns). Report findings; fix nothing yet.",
   },
   {
@@ -102,14 +103,14 @@ const VERBS: Verb[] = [
   },
   {
     verb: "ship",
-    cues: ["ship", "harden", "production-ready", "production ready", "edge case", "real data", "empty state", "error state", "i18n", "loading state", "rtl"],
-    files: ["engineering-and-performance", "css-techniques"],
+    cues: ["ship", "harden", "production-ready", "production ready", "edge case", "real data", "empty state", "error state", "i18n", "loading state", "rtl", "localization", "translation"],
+    files: ["engineering-and-performance", "css-techniques", "ux/23-internationalization"],
     note: "Production-ready: long/empty/RTL text, API errors, no fixed text widths, logical properties.",
   },
   {
     verb: "speed",
     cues: ["speed", "optimize", "optimise", "slow", "janky", "jank", "lag", "fps", "bundle size", "performance issue", "core web vitals"],
-    files: ["engineering-and-performance", "css-techniques"],
+    files: ["engineering-and-performance", "css-techniques", "ux/22-performance-ux"],
     note: "Fix UI performance: measure first, fix the real bottleneck.",
   },
   {
@@ -133,7 +134,7 @@ const VERBS: Verb[] = [
   {
     verb: "responsive",
     cues: ["responsive", "adapt", "mobile", "tablet", "different device", "breakpoint", "small screen", "touch"],
-    files: ["engineering-and-performance", "refactor-and-redesign", "css-techniques"],
+    files: ["engineering-and-performance", "refactor-and-redesign", "css-techniques", "ux/08-mobile-ux"],
     note: "Rethink for target device: reflow, container queries, touch targets, safe areas.",
   },
   {
@@ -145,13 +146,13 @@ const VERBS: Verb[] = [
   {
     verb: "copy",
     cues: ["copy", "clarify", "microcopy", "ux copy", "ux writing", "rewrite this error", "error message", "button label", "labels are confusing", "wording"],
-    files: ["command-playbook", "avoid-ai-slop"],
+    files: ["command-playbook", "avoid-ai-slop", "ux/09-ux-writing"],
     note: "UX copy: verb+object buttons, structured errors, one term per concept.",
   },
   {
     verb: "onboard",
     cues: ["onboard", "onboarding", "first run", "first-run", "first-time", "product tour", "activation", "getting started", "welcome screen", "empty states"],
-    files: ["command-playbook", "engineering-and-performance"],
+    files: ["command-playbook", "engineering-and-performance", "ux/16-onboarding"],
     note: "First-run and empty states: shortest path to first value.",
   },
   {
@@ -169,13 +170,13 @@ const VERBS: Verb[] = [
   {
     verb: "form",
     cues: ["form", "form design", "input fields", "form validation", "multi-step form", "form layout", "checkout form", "sign up form"],
-    files: ["interaction-design", "engineering-and-performance"],
+    files: ["interaction-design", "engineering-and-performance", "ux/07-forms-and-inputs"],
     note: "Form UX: single column, top labels, blur validation, inline errors.",
   },
   {
     verb: "nav",
     cues: ["nav", "navigation", "nav menu", "sidebar nav", "tab bar", "breadcrumb", "menu structure", "top nav", "bottom nav"],
-    files: ["interaction-design", "design-principles"],
+    files: ["interaction-design", "design-principles", "ux/05-information-architecture"],
     note: "Navigation pattern matched to IA depth and platform.",
   },
   {
@@ -202,18 +203,90 @@ const VERBS: Verb[] = [
     files: ["css-techniques", "design-principles"],
     note: "Apply idiomatic modern CSS: resets, centering, selectors, specificity (@layer/:is), logical properties, container queries, clamp(), :has().",
   },
+  {
+    verb: "research",
+    cues: ["user research", "interview users", "usability test", "persona", "survey", "test with users", "understand users", "discovery research"],
+    files: ["ux/10-user-research", "project-init"],
+    note: "Research before design: interviews, usability tests, personas, success metrics.",
+  },
+  {
+    verb: "laws",
+    cues: ["laws of ux", "fitts", "hick", "miller law", "jakob", "aesthetic-usability", "cognitive load", "working memory"],
+    files: ["ux/02-laws-of-ux", "interaction-design"],
+    note: "Apply the Laws of UX quick reference to the interaction design.",
+  },
+  {
+    verb: "notify",
+    cues: ["notification", "toast", "push notification", "banner", "alerts", "attention management", "notification center", "permission prompt"],
+    files: ["ux/17-notifications", "interaction-design"],
+    note: "Notification system design: severity mapping, permission timing, toast lifecycle.",
+  },
+  {
+    verb: "search",
+    cues: ["search", "search bar", "autocomplete", "search results", "filters", "facets", "empty results"],
+    files: ["ux/19-search-ux", "interaction-design"],
+    note: "Search UX: autocomplete, result ranking, filters, empty-result handling.",
+  },
+  {
+    verb: "table",
+    cues: ["table", "data table", "sortable", "pagination", "bulk action", "row selection", "list view"],
+    files: ["ux/21-data-tables"],
+    note: "Data tables: columns, sorting, pagination, bulk actions, dense/comfortable density.",
+  },
+  {
+    verb: "chart",
+    cues: ["chart", "graph", "dashboard", "data viz", "visualization", "visualise", "sparkline", "metrics display"],
+    files: ["ux/18-data-visualization", "design-principles"],
+    note: "Data visualization: chart choice, colorblind-safe palettes, dashboard hierarchy.",
+  },
+  {
+    verb: "collaborate",
+    cues: ["collaboration", "multiplayer", "presence", "live cursor", "avatar", "typing indicator", "real-time editing", "shared", "concurrent", "conflict resolution", "offline mode", "permissions"],
+    files: ["ux/12a-presence-awareness", "ux/12b-conflict-resolution-sync"],
+    note: "Collaborative UX: presence awareness, sync/conflict UX, offline states, permissions.",
+  },
+  {
+    verb: "canvas",
+    cues: ["canvas", "whiteboard", "spatial", "zoom", "pan", "minimap", "smart guides", "snapping", "object manipulation", "viewport culling"],
+    files: ["ux/13a-canvas-navigation", "ux/13b-canvas-objects-performance"],
+    note: "Canvas/spatial apps: cursor-centered zoom, snapping, minimap, 60fps pan/zoom.",
+  },
+  {
+    verb: "ai",
+    cues: ["ai interface", "chat interface", "copilot", "agent ui", "generative ui", "llm ui", "ai chat", "streaming response", "ai suggestions", "ai output"],
+    files: ["ux/14-ai-ux-patterns", "interaction-design"],
+    note: "AI interface design: labeling, attribution, stop/cancel, undo, human override.",
+  },
+  {
+    verb: "ethics",
+    cues: ["dark pattern", "ethical", "confirmshaming", "consent", "deceptive", "manipulative", "dark patterns", "privacy design", "trust"],
+    files: ["ux/15-ethical-design", "avoid-ai-slop"],
+    note: "Ethical design: symmetric consent, no confirmshaming, no deceptive patterns.",
+  },
+  {
+    verb: "voice",
+    cues: ["voice", "voice ui", "speech input", "multimodal", "hands-free", "audio feedback", "voice assistant"],
+    files: ["ux/24-voice-and-multimodal", "motion-and-interaction"],
+    note: "Voice & multimodal input: fallback modality, recognition feedback, cross-device.",
+  },
+  {
+    verb: "emotion",
+    cues: ["emotional", "delight", "personality", "trust", "warm", "human connection", "error recovery"],
+    files: ["ux/20-emotional-design", "motion-and-interaction"],
+    note: "Emotional design: trust-building, personality, warm error recovery.",
+  },
 ];
 
 export interface DispatchMatch {
   verb: string;
-  files: ReferenceName[];
+  files: ReferenceId[];
   note: string;
   score: number;
 }
 
 export interface DispatchResult {
   matched: DispatchMatch[];
-  recommendedReads: ReferenceName[];
+  recommendedReads: ReferenceId[];
   text: string;
 }
 
@@ -229,7 +302,7 @@ export function dispatchIntent(request: string): DispatchResult {
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
 
-  const reads = new Set<ReferenceName>();
+  const reads = new Set<ReferenceId>();
   for (const m of scored) for (const f of m.files) reads.add(f);
   reads.add("avoid-ai-slop");
   if (scored.length === 0) {
