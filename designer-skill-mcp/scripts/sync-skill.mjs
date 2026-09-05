@@ -1,41 +1,35 @@
-// Copies the canonical skills/designer-skill/ folder into assets/skill so the published
-// npm package is self-contained. skills/designer-skill/ remains the single source of truth.
-import { existsSync, rmSync, mkdirSync, cpSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+// Canonical skill content is copied into the self-contained npm package.
+import { existsSync, mkdirSync, cpSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { dirname, join, resolve, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const pkgRoot = resolve(here, "..");
-const src = resolve(pkgRoot, "..", "skills", "designer-skill");
-const dest = join(pkgRoot, "assets", "skill");
+const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const src = resolve(pkgRoot, '..', 'skills', 'designer-skill');
+const dest = join(pkgRoot, 'assets', 'skill');
 
-if (!existsSync(join(src, "SKILL.md"))) {
-  if (existsSync(join(dest, "SKILL.md"))) {
-    console.log(`[sync-skill] source not found at ${src}; using bundled assets/skill.`);
-    process.exit(0);
-  }
-  console.error(`[sync-skill] ERROR: no designer-skill source at ${src} and no bundled copy at ${dest}.`);
-  process.exit(1);
+if (!existsSync(join(src, 'SKILL.md'))) {
+  throw new Error('Canonical skill source is missing. Refusing to publish stale bundled assets.');
+}
+for (const dir of ['reference', 'scripts', 'schemas']) {
+  if (!existsSync(join(src, dir))) throw new Error(`Missing canonical skill directory: ${dir}`);
 }
 
+// The target is a fixed generated, gitignored directory, never a caller-supplied path.
 rmSync(dest, { recursive: true, force: true });
-mkdirSync(join(dest, "reference"), { recursive: true });
-cpSync(join(src, "SKILL.md"), join(dest, "SKILL.md"));
+mkdirSync(dest, { recursive: true });
+cpSync(join(src, 'SKILL.md'), join(dest, 'SKILL.md'));
+for (const dir of ['reference', 'scripts', 'schemas']) cpSync(join(src, dir), join(dest, dir), { recursive: true });
 
-const refDir = join(src, "reference");
-let refCount = 0;
-for (const f of readdirSync(refDir)) {
-  if (f.endsWith(".md")) {
-    cpSync(join(refDir, f), join(dest, "reference", f));
-    refCount++;
+const files = {};
+function hashDirectory(dir) {
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) hashDirectory(path);
+    else if (entry.isFile()) files[relative(dest, path).split('\\').join('/')] = createHash('sha256').update(readFileSync(path)).digest('hex');
+    else throw new Error(`Unsupported packaged entry: ${entry.name}`);
   }
 }
-
-const scriptsSrc = join(src, "scripts");
-let scriptCount = 0;
-if (existsSync(scriptsSrc)) {
-  cpSync(scriptsSrc, join(dest, "scripts"), { recursive: true });
-  scriptCount = readdirSync(scriptsSrc).filter((f) => f.endsWith(".mjs") || f.endsWith(".json")).length;
-}
-
-console.log(`[sync-skill] synced SKILL.md + ${refCount} reference files + scripts → ${dest} (${scriptCount} script entries)`);
+hashDirectory(dest);
+writeFileSync(join(dest, 'manifest.json'), JSON.stringify({ schemaVersion: 1, algorithm: 'sha256', files }, null, 2) + '\n');
+console.log(`[sync-skill] bundled ${Object.keys(files).length} files including schemas and content hashes`);
