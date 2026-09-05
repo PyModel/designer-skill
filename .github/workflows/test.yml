@@ -23,16 +23,35 @@ jobs:
         working-directory: designer-skill-mcp
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: designer-skill-mcp/package-lock.json
       - run: npm ci
+      - name: Capture reproducible inputs
+        if: ${{ matrix.node == 22 }}
+        run: |
+          mkdir -p verification
+          git -C .. archive --format=tar.gz HEAD > verification/source.tar.gz
+          tar -czf verification/dependencies.tar.gz node_modules
+          node --version > verification/runtime.txt
+          npm --version >> verification/runtime.txt
+          git rev-parse HEAD >> verification/runtime.txt
       - run: npm run build
       - run: node --test checks/core.mjs
       - run: npm test
       - run: node scripts/verify-package.mjs
+      - name: Retain verification inputs
+        if: ${{ always() && matrix.node == 22 }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verification-inputs
+          path: designer-skill-mcp/verification/
+          if-no-files-found: error
+          retention-days: 1
 
   # Preserve the existing required branch-protection check name.
   test:
@@ -51,6 +70,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
