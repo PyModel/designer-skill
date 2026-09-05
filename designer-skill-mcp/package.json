@@ -4,15 +4,8 @@
   "mcpName": "io.github.pymodel/designer-skill-mcp",
   "description": "Plug-and-play MCP that gives your coding agent UI superpowers: design tools, reference docs, and anti-slop checks.",
   "type": "module",
-  "bin": {
-    "designer-skill-mcp": "dist/index.js"
-  },
-  "files": [
-    "dist",
-    "assets/skill",
-    "assets/engine",
-    "README.md"
-  ],
+  "bin": { "designer-skill-mcp": "dist/index.js" },
+  "files": ["dist", "assets/skill", "assets/engine", "README.md"],
   "scripts": {
     "sync-skill": "node scripts/sync-skill.mjs",
     "build": "npm run sync-skill && tsc && chmod +x dist/index.js",
@@ -21,42 +14,28 @@
     "test": "vitest run",
     "prepublishOnly": "npm run build && npm test"
   },
-  "engines": {
-    "node": ">=18"
-  },
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "design",
-    "frontend",
-    "ui",
-    "designer-skill",
-    "agent",
-    "coding-agent",
-    "plug-and-play"
-  ],
+  "engines": { "node": ">=22" },
+  "keywords": ["mcp", "model-context-protocol", "design", "frontend", "ui", "designer-skill", "agent", "coding-agent", "plug-and-play"],
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/PyModel/designer-skill.git",
-    "directory": "designer-skill-mcp"
-  },
+  "repository": { "type": "git", "url": "git+https://github.com/PyModel/designer-skill.git", "directory": "designer-skill-mcp" },
   "homepage": "https://github.com/PyModel/designer-skill#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "css-select": "^6.0.0",
+    "css-tree": "^3.1.0",
+    "domutils": "^3.2.2",
     "express": "^5.2.1",
+    "htmlparser2": "^10.0.0",
     "update-notifier": "^7.3.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^26.0.1",
+    "@types/node": "^22.18.0",
     "@types/update-notifier": "^6.0.8",
-    "tsx": "^4.22.4",
+    "tsx": "^4.23.12",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
-  "overrides": {
-    "esbuild": "^0.28.1"
-  }
+  "overrides": { "esbuild": "^0.28.1" }
 }

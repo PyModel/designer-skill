@@ -1,0 +1,57 @@
+name: One-time review dependency resolution
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - designer-skill-mcp/package.json
+      - .github/workflows/refresh-review-lock.yml
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/review-followup-and-dependencies' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+      - name: Resolve compatible dependencies without lifecycle scripts
+        working-directory: designer-skill-mcp
+        run: npm update --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit only the generated lockfile to the fixed review branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 -I - <<'PY'
+          import base64, json, os, urllib.request
+          from pathlib import Path
+          api = 'https://api.github.com/repos/PyModel/designer-skill'
+          branch = 'fix/review-followup-and-dependencies'
+          path = 'designer-skill-mcp/package-lock.json'
+          headers = {'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+          def call(url, data=None):
+              req = urllib.request.Request(url, data=json.dumps(data).encode() if data is not None else None, headers=headers, method='PUT' if data is not None else 'GET')
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  return json.load(response)
+          current = call(api + '/git/ref/heads/' + branch)['object']['sha']
+          if current != os.environ['EXPECTED_HEAD']:
+              raise SystemExit('Review branch moved; refusing to overwrite concurrent dependency work.')
+          old = call(api + '/contents/' + path + '?ref=' + current)
+          content = Path(path).read_bytes()
+          if base64.b64decode(old['content']) == content:
+              print('Lockfile is already current.')
+          else:
+              result = call(api + '/contents/' + path, {'message': 'build(deps): resolve reviewed compatible updates and static HTML parsers', 'content': base64.b64encode(content).decode(), 'sha': old['sha'], 'branch': branch})
+              print('Generated lockfile commit: ' + result['commit']['sha'])
+          PY
