@@ -1,76 +1,38 @@
 import { describe, it, expect } from "vitest";
 import { commitDesignDirection } from "../src/direction.js";
-
-const validDirection = {
-  register: "brand" as const,
-  designRead: "Independent invoicing tool for solo consultants, with a precise editorial ledger language",
-  designVariance: 7,
-  motionIntensity: 4,
-  visualDensity: 5,
-  aesthetic: "brand-identity",
-  physicalScene: "Solo founder reviewing metrics at 6am in a dim apartment, laptop glow on face",
-  layoutFamilies: ["asymmetric bento", "single-purpose viewport"],
-  typographyDirection: "Neo-grotesk display + humanist body, 1.333 scale ratio",
-  antiSlopRisks: ["no cream background", "no three equal feature cards"],
-  inverseTestPass: true,
-  inverseTestDescription:
-    "Ledger-style invoicing for freelancers who work from coffee shops — monospace amounts on receipt-paper texture, not another fintech navy dashboard",
-  namedReferences: ["Linear marketing restraint", "Klim type confidence"],
+const valid = {
+  register: "product" as const,
+  designRead: "Independent invoicing for consultants using the approved ledger identity.",
+  contextSources: ["PRODUCT.md", "src/tokens.css"], aesthetic: "brand-identity",
+  typographyDirection: "Approved single font family with a readable type scale", layoutFamilies: ["ledger"],
 };
-
-describe("commitDesignDirection", () => {
-  it("PASSes a complete brand direction", () => {
-    const r = commitDesignDirection(validDirection);
-    expect(r.status).toBe("PASS");
-    expect(r.direction?.register).toBe("brand");
+describe("design direction input validation", () => {
+  it("accepts a contextual direction without claiming enforcement", () => {
+    const result = commitDesignDirection(valid);
+    expect(result.status).toBe("PASS"); expect(result.scope).toBe("input-validation");
+    expect(result.directionId).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.message).toContain("does not prove");
   });
-
-  it("FAILs when inverse test is not passed", () => {
-    const r = commitDesignDirection({ ...validDirection, inverseTestPass: false });
-    expect(r.status).toBe("FAIL");
-    expect(r.fixes?.some((f) => f.includes("inverseTestPass"))).toBe(true);
+  it("allows an existing identity to be preserved without ceremony", () => {
+    expect(commitDesignDirection({ mode: "preserve", register: "product", contextSources: ["src/form.css"],
+      designRead: "Repair existing form alignment without changing the approved identity." }).status).toBe("PASS");
   });
-
-  it("FAILs category-modal inverse descriptions", () => {
-    const r = commitDesignDirection({
-      ...validDirection,
-      inverseTestDescription: "AI-powered workflow that streamlines your creative process seamlessly",
-    });
-    expect(r.status).toBe("FAIL");
-    expect(r.fixes?.some((f) => f.includes("category-modal"))).toBe(true);
+  it("does not treat inverse-test booleans or vocabulary as proof of design quality", () => {
+    expect(commitDesignDirection({ ...valid, inverseTestPass: false,
+      inverseTestDescription: "AI-powered workflow for the documented product audience" }).status).toBe("PASS");
   });
-
-  it("FAILs brand surfaces with only one layout family", () => {
-    const r = commitDesignDirection({
-      ...validDirection,
-      layoutFamilies: ["asymmetric bento"],
-    });
-    expect(r.status).toBe("FAIL");
-    expect(r.fixes?.some((f) => f.includes("layoutFamilies"))).toBe(true);
+  it("accepts custom aesthetics and a single appropriate layout", () => {
+    expect(commitDesignDirection({ ...valid, aesthetic: "museum-wayfinding" }).status).toBe("PASS");
   });
-
-  it("FAILs vague physical scenes", () => {
-    const r = commitDesignDirection({
-      ...validDirection,
-      physicalScene: "Modern users who want a clean experience",
-    });
-    expect(r.status).toBe("FAIL");
+  it("rejects duplicate layout entries rather than counting them as variety", () => {
+    expect(commitDesignDirection({ ...valid, layoutFamilies: ["ledger", "ledger"] }).status).toBe("FAIL");
   });
-
-  it("FAILs incomplete calibration", () => {
-    const r = commitDesignDirection({
-      ...validDirection,
-      designRead: "Clean modern app",
-      designVariance: 11,
-      motionIntensity: 4.5,
-    });
-    expect(r.status).toBe("FAIL");
-    expect(r.fixes).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("designRead"),
-        expect.stringContaining("designVariance"),
-        expect.stringContaining("motionIntensity"),
-      ]),
-    );
+  it("requires inspected context sources", () => {
+    expect(commitDesignDirection({ ...valid, contextSources: [] }).status).toBe("FAIL");
+  });
+  it("rejects invalid dials and incomplete inputs", () => {
+    const result = commitDesignDirection({ ...valid, designRead: "Too short", designVariance: 11, motionIntensity: 4.5 });
+    expect(result.status).toBe("FAIL");
+    for (const field of ["designRead", "designVariance", "motionIntensity"]) expect(result.fixes?.some((f) => f.includes(field))).toBe(true);
   });
 });

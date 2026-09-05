@@ -10,8 +10,14 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  runtime:
+    name: runtime-${{ matrix.node }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
     defaults:
       run:
         working-directory: designer-skill-mcp
@@ -19,20 +25,34 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: designer-skill-mcp/package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: node --test checks/core.mjs
       - run: npm test
+      - run: node scripts/verify-package.mjs
+
+  # Preserve the existing required branch-protection check name.
+  test:
+    needs: runtime
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every runtime job to succeed
+        env:
+          RUNTIME_RESULT: ${{ needs.runtime.result }}
+        run: test "$RUNTIME_RESULT" = success
 
   validate-plugin:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
-      # Pinned for reproducibility; bump periodically to pick up schema updates.
+          node-version: 24
       - run: npm install -g @anthropic-ai/claude-code@2.1.207
       - run: claude plugin validate --strict .
