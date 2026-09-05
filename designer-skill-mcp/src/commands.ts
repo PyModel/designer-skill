@@ -1,139 +1,73 @@
-// Command metadata and verb → reference routing for designer-skill MCP.
+// One registry feeds command discovery, aliases, dispatch and reference routing.
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ReferenceName } from "./skill.js";
+import { isReferenceName, type ReferenceName } from "./skill.js";
+import { DesignError } from "./scope.js";
 
 export interface CommandMeta {
   description: string;
   argumentHint: string;
+  aliases: string[];
+  cues: string[];
+  reads: ReferenceName[];
 }
 
-/** Legacy verb names → canonical command. */
-export const COMMAND_ALIASES: Record<string, string> = {
-  init: "setup",
-  craft: "build",
-  shape: "plan",
-  live: "preview",
-  document: "spec",
-  audit: "check",
-  critique: "review",
-  score: "review",
-  typeset: "type",
-  colorize: "color",
-  animate: "motion",
-  adapt: "responsive",
-  distill: "simplify",
-  clarify: "copy",
-  harden: "ship",
-  optimize: "speed",
-  extract: "tokens",
-  redesign: "refresh",
-  variants: "options",
-  polish: "finish",
-  bolder: "amplify",
-  quieter: "calm",
-  overdrive: "push",
-  navigate: "nav",
-  feel: "tone",
-};
-
-/** Maps a design verb to the reference file(s) an agent should read. */
-export const COMMAND_READS: Record<string, ReferenceName[]> = {
-  setup: ["project-init"],
-  plan: ["design-principles", "aesthetic-systems", "differentiation-playbook"],
-  build: ["craft-flow", "design-principles", "aesthetic-systems", "differentiation-playbook", "engineering-and-performance", "avoid-ai-slop"],
-  preview: ["live-mode"],
-  spec: ["refactor-and-redesign"],
-  check: ["engineering-and-performance", "avoid-ai-slop", "refactor-and-redesign"],
-  review: ["design-principles", "avoid-ai-slop", "visual-critique"],
-  finish: ["design-principles", "engineering-and-performance"],
-  amplify: ["aesthetic-systems", "differentiation-playbook", "avoid-ai-slop"],
-  calm: ["design-principles", "aesthetic-systems"],
-  push: ["motion-and-interaction", "engineering-and-performance"],
-  motion: ["motion-and-interaction"],
-  delight: ["motion-and-interaction", "avoid-ai-slop"],
-  layout: ["design-principles"],
-  type: ["design-principles"],
-  color: ["design-principles", "aesthetic-systems"],
-  ship: ["engineering-and-performance"],
-  speed: ["engineering-and-performance"],
-  simplify: ["design-principles"],
-  tokens: ["engineering-and-performance", "design-systems"],
-  brand: ["aesthetic-systems", "differentiation-playbook", "avoid-ai-slop"],
-  responsive: ["engineering-and-performance", "refactor-and-redesign"],
-  refresh: ["refactor-and-redesign", "avoid-ai-slop"],
-  copy: ["command-playbook", "avoid-ai-slop"],
-  onboard: ["command-playbook", "engineering-and-performance"],
-  options: ["refactor-and-redesign", "differentiation-playbook", "avoid-ai-slop"],
-  form: ["interaction-design", "engineering-and-performance"],
-  nav: ["interaction-design", "design-principles"],
-  states: ["interaction-design", "engineering-and-performance"],
-  tone: ["interaction-design", "motion-and-interaction"],
-  system: ["design-systems", "engineering-and-performance"],
-};
-
-function resolveScriptsDir(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const pkgRoot = resolve(here, "..");
-  const bundled = join(pkgRoot, "assets", "skill", "scripts");
-  if (existsSync(join(bundled, "command-metadata.json"))) return bundled;
-  const dev = resolve(pkgRoot, "..", "skills", "designer-skill", "scripts");
-  if (existsSync(join(dev, "command-metadata.json"))) return dev;
-  throw new Error("command-metadata.json not found. Run npm run sync-skill.");
+export function validateCommandMetadata(value: unknown): Record<string, CommandMeta> {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !Object.keys(value).length) {
+    throw new DesignError("REGISTRY_INVALID", "Command registry must be a nonempty object.");
+  }
+  const metadata = value as Record<string, CommandMeta>;
+  const names = new Set(Object.keys(metadata));
+  const fail = () => { throw new DesignError("REGISTRY_INVALID", "Invalid command metadata, duplicate alias, or unknown reference."); };
+  for (const [verb, item] of Object.entries(metadata)) {
+    if (!/^[a-z][a-z-]*$/.test(verb) || !item || typeof item !== "object" ||
+      typeof item.description !== "string" || !item.description.trim() || typeof item.argumentHint !== "string") fail();
+    for (const field of ["aliases", "cues", "reads"] as const) {
+      const entries = item[field];
+      if (!Array.isArray(entries) || entries.some((s) => typeof s !== "string" || !s.trim()) || new Set(entries).size !== entries.length) fail();
+    }
+    if (!item.cues.length || !item.reads.length || item.reads.some((r) => !isReferenceName(r))) fail();
+    for (const alias of item.aliases) {
+      if (!/^[a-z][a-z-]*$/.test(alias) || names.has(alias)) fail();
+      names.add(alias);
+    }
+  }
+  return metadata;
 }
 
-let metadataCache: Record<string, CommandMeta> | null = null;
-
+let cache: Record<string, CommandMeta> | undefined;
 export function getCommandMetadata(): Record<string, CommandMeta> {
-  if (metadataCache) return metadataCache;
-  const dir = resolveScriptsDir();
-  metadataCache = JSON.parse(readFileSync(join(dir, "command-metadata.json"), "utf8")) as Record<
-    string,
-    CommandMeta
-  >;
-  return metadataCache;
+  if (cache) return cache;
+  const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const candidates = [join(pkgRoot, "assets", "skill", "scripts", "command-metadata.json"),
+    resolve(pkgRoot, "..", "skills", "designer-skill", "scripts", "command-metadata.json")];
+  const path = candidates.find(existsSync);
+  if (!path) throw new DesignError("REGISTRY_INVALID", "Command registry missing. Run npm run sync-skill.");
+  cache = validateCommandMetadata(JSON.parse(readFileSync(path, "utf8")));
+  return cache;
 }
 
 export function resolveCommandVerb(verb: string): { canonical: string; alias?: string } {
-  const key = verb.toLowerCase();
-  const canonical = COMMAND_ALIASES[key] ?? key;
-  return { canonical, alias: canonical !== key ? key : undefined };
+  const key = verb.trim().toLowerCase();
+  const meta = getCommandMetadata();
+  if (Object.hasOwn(meta, key)) return { canonical: key };
+  for (const [canonical, entry] of Object.entries(meta)) {
+    if (entry.aliases.includes(key)) return { canonical, alias: key };
+  }
+  throw new DesignError("UNKNOWN_COMMAND", `Unknown command "${verb}". Use list_commands or dispatch_intent.`);
 }
 
 export function listCommands(): { verb: string; description: string; argumentHint: string }[] {
-  const meta = getCommandMetadata();
-  return Object.entries(meta).map(([verb, m]) => ({
-    verb,
-    description: m.description,
-    argumentHint: m.argumentHint,
-  }));
+  return Object.entries(getCommandMetadata()).map(([verb, { description, argumentHint }]) => ({ verb, description, argumentHint }));
 }
-
 export function getCommandReads(verb: string): ReferenceName[] {
-  const { canonical } = resolveCommandVerb(verb);
-  const reads = COMMAND_READS[canonical];
-  if (!reads) return ["command-playbook", "design-principles"];
-  return reads;
+  return [...getCommandMetadata()[resolveCommandVerb(verb).canonical].reads];
 }
-
 export function formatCommandHelp(verb: string): string {
   const { canonical, alias } = resolveCommandVerb(verb);
   const meta = getCommandMetadata()[canonical];
-  if (!meta) {
-    return `Unknown command "${verb}". Call list_commands for all verbs, or dispatch_intent with a natural-language request.`;
-  }
-  const reads = getCommandReads(canonical);
-  const lines = [
-    `# designer-skill command: ${canonical}`,
-    "",
-    alias ? `> \`${alias}\` is an alias for \`${canonical}\`.` : "",
-    meta.description,
-    meta.argumentHint ? `\nArgument hint: \`${meta.argumentHint}\`` : "",
-    "",
-    `Read before acting: ${reads.map((r) => `reference/${r}.md`).join(", ")}`,
-    "",
-    "Always run the anti-slop ship gate (`anti_slop_checklist` or `reference/avoid-ai-slop.md`) before declaring UI work done.",
-  ];
-  return lines.filter(Boolean).join("\n");
+  return [`# designer-skill command: ${canonical}`, alias ? `${alias} is an alias for ${canonical}.` : "",
+    meta.description, meta.argumentHint, `Read before acting: ${meta.reads.map((r) => `reference/${r}.md`).join(", ")}`,
+    "Preserve user scope. Static review_and_gate results do not certify rendered UI readiness."].filter(Boolean).join("\n\n");
 }
