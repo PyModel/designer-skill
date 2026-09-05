@@ -1,145 +1,92 @@
-// Composite ship gate: detector + checklist summary + score + fix list.
-
-import { readFileSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+// A static check cannot certify an interface it never rendered.
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { detectAntipatterns, formatDetectionResults, type DetectionFinding } from "./detect.js";
-import { getReferenceDoc } from "./skill.js";
+import { scanAntipatterns, formatDetectionResults, type DetectionReport, type DetectionFinding } from "./detect.js";
+import { DesignError } from "./scope.js";
+
+interface Rule { id: string; category: "slop" | "quality"; severity?: string }
+const REQUIRED_REVIEW_RULES = new Set(["broken-image", "low-contrast", "text-overflow", "clipped-overflow-container"]);
+
+export function validateRegistry(value: unknown): Rule[] {
+  if (!Array.isArray(value) || !value.length) throw new DesignError("REGISTRY_INVALID", "Detector registry is empty or invalid.");
+  const ids = new Set<string>();
+  for (const rule of value) {
+    if (!rule || typeof rule.id !== "string" || !rule.id.trim() || ids.has(rule.id) ||
+      !["slop", "quality"].includes(rule.category)) {
+      throw new DesignError("REGISTRY_INVALID", "Registry requires unique nonempty ids and known categories.");
+    }
+    ids.add(rule.id);
+  }
+  return value as Rule[];
+}
 
 export interface GateResult {
-  status: "PASS" | "FAIL";
-  score: number;
+  schemaVersion: 2;
+  status: "FAIL" | "NOT_VERIFIED";
+  staticStatus: "PASS" | "FAIL";
+  uiReadiness: "FAIL" | "NOT_VERIFIED";
+  scope: "static";
+  code: "STATIC_FINDINGS" | "NO_SCAN_COVERAGE" | "ADDITIONAL_VERIFICATION_REQUIRED";
   findingCount: number;
   blockingCount: number;
   warningCount: number;
   findings: DetectionFinding[];
+  coverage: DetectionReport["coverage"];
+  files: DetectionReport["files"];
+  ignoredRules: string[];
+  ignoredValues: number;
+  checks: Array<{ id: string; status: "PASS" | "FAIL" | "NOT_RUN"; producer: string | null }>;
   fixes: string[];
   summary: string;
 }
 
-const PASS_SCORE = 85;
-
-let slopIds: Set<string> | null = null;
-
-async function loadSlopIds(): Promise<Set<string>> {
-  if (slopIds) return slopIds;
-  const here = dirname(fileURLToPath(import.meta.url));
-  const registry = resolve(here, "..", "assets", "engine", "registry", "antipatterns.mjs");
-  if (!existsSync(registry)) {
-    slopIds = new Set();
-    return slopIds;
-  }
-  const mod = (await import(pathToFileURL(registry).href)) as {
-    ANTIPATTERNS?: Array<{ id: string; category?: string }>;
-  };
-  slopIds = new Set((mod.ANTIPATTERNS ?? []).filter((r) => r.category === "slop").map((r) => r.id));
-  return slopIds;
-}
-
-function scoreFindings(findings: DetectionFinding[], slop: Set<string>): { score: number; blocking: number; warnings: number } {
-  let score = 100;
-  let blocking = 0;
-  let warnings = 0;
-  for (const f of findings) {
-    const isSlop = slop.has(f.antipattern);
-    if (isSlop) {
-      score -= 8;
-      blocking += 1;
-    } else {
-      score -= 3;
-      warnings += 1;
-    }
-  }
-  return { score: Math.max(0, score), blocking, warnings };
-}
-
-function buildFixList(findings: DetectionFinding[], slop: Set<string>): string[] {
+export function evaluateGate(report: DetectionReport, registry: unknown, blockingRules: string[] = []): GateResult {
+  const rules = validateRegistry(registry);
+  const ids = new Set(rules.map((r) => r.id));
+  if (blockingRules.some((id) => !ids.has(id))) throw new DesignError("REGISTRY_INVALID", "Unknown project blocking rule.");
+  if (report.findings.some((f) => !ids.has(f.antipattern))) throw new DesignError("REGISTRY_INVALID", "Detector emitted an unregistered rule.");
+  const blocking = new Set([...REQUIRED_REVIEW_RULES, ...blockingRules]);
   const seen = new Set<string>();
-  const fixes: string[] = [];
-  for (const f of findings) {
-    const key = `${f.antipattern}:${f.snippet}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const tag = slop.has(f.antipattern) ? "BLOCKING" : "warning";
-    fixes.push(`[${tag}] ${f.file}${f.line ? `:${f.line}` : ""} — ${f.description}`);
-  }
-  return fixes;
-}
-
-const CHECKLIST_REMINDER = [
-  "Category-reflex: neither first- nor second-order guess is obvious",
-  "No em-dash (—) in visible copy",
-  "Eyebrow uppercase-tracking count ≤ ceil(sections / 3)",
-  "Full output — no // rest of code or placeholder sections",
-  "a11y: focus-visible rings, 4.5:1 text contrast, reduced-motion alt, 44px touch targets",
-];
-
-export async function reviewAndGate(
-  target: string,
-  options: { cwd?: string } = {},
-): Promise<GateResult> {
-  const cwd = options.cwd ?? process.cwd();
-  const slop = await loadSlopIds();
-  const findings = await detectAntipatterns(target, { cwd });
-  const { score, blocking, warnings } = scoreFindings(findings, slop);
-  const fixes = buildFixList(findings, slop);
-  const status = score >= PASS_SCORE && blocking === 0 ? "PASS" : "FAIL";
-
-  const summaryLines = [
-    `## review_and_gate: ${status}`,
-    "",
-    `**Score:** ${score}/100 (pass threshold: ${PASS_SCORE}, blocking slop findings must be 0)`,
-    `**Findings:** ${findings.length} total (${blocking} blocking slop, ${warnings} quality warnings)`,
-    "",
-    formatDetectionResults(findings),
+  const findings = report.findings.filter((f) => {
+    const key = JSON.stringify([f.file, f.line, f.antipattern, f.snippet]);
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+  const blockingCount = findings.filter((f) => blocking.has(f.antipattern)).length;
+  const covered = report.coverage.scannedFiles > 0 && report.coverage.bytesScanned > 0 &&
+    rules.some((rule) => !report.ignoredRules.includes(rule.id));
+  const staticStatus = covered && !blockingCount ? "PASS" : "FAIL";
+  const status = staticStatus === "FAIL" ? "FAIL" : "NOT_VERIFIED";
+  const code = !covered ? "NO_SCAN_COVERAGE" : blockingCount ? "STATIC_FINDINGS" : "ADDITIONAL_VERIFICATION_REQUIRED";
+  const fixes = findings.map((f) => `[${blocking.has(f.antipattern) ? "REVIEW REQUIRED" : "advisory"}] ${f.file}: ${f.description}`);
+  if (!covered) fixes.unshift("No applicable files were scanned. Correct the target or document non-applicability.");
+  const checks: GateResult["checks"] = [
+    { id: "static", status: staticStatus, producer: "designer-skill-detector" },
+    ...["functional", "rendered", "accessibility", "performance"].map((id) => ({ id, status: "NOT_RUN" as const, producer: null })),
   ];
-
-  if (status === "FAIL") {
-    summaryLines.push("", "### Blocking fixes required");
-    if (fixes.length === 0) {
-      summaryLines.push(`- Score ${score} is below ${PASS_SCORE} — resolve detected issues and re-run review_and_gate.`);
-    } else {
-      for (const fix of fixes.slice(0, 20)) summaryLines.push(`- ${fix}`);
-      if (fixes.length > 20) summaryLines.push(`- … and ${fixes.length - 20} more`);
-    }
-  }
-
-  summaryLines.push("", "### Manual checklist (agent must verify)");
-  for (const item of CHECKLIST_REMINDER) summaryLines.push(`- [ ] ${item}`);
-
   return {
-    status,
-    score,
-    findingCount: findings.length,
-    blockingCount: blocking,
-    warningCount: warnings,
-    findings,
-    fixes,
-    summary: summaryLines.join("\n"),
+    schemaVersion: 2, status, staticStatus, uiReadiness: status, scope: "static", code,
+    findingCount: findings.length, blockingCount, warningCount: findings.length - blockingCount,
+    findings, coverage: report.coverage, files: report.files,
+    ignoredRules: report.ignoredRules, ignoredValues: report.ignoredValues, checks, fixes,
+    summary: `Static check: ${staticStatus}. UI readiness: ${status}.\n` +
+      `Scanned ${report.coverage.scannedFiles} of ${report.coverage.candidateFiles} candidate files; ignored ${report.coverage.ignoredFiles}.\n` +
+      `${blockingCount} findings require review; ${findings.length - blockingCount} advisory findings.\n` +
+      "Style preferences are not universal defects. Required rendered and behavioral checks must be reported separately.\n" +
+      formatDetectionResults(findings),
   };
 }
 
-export function formatGateResult(result: GateResult, includeChecklist = false): string {
-  const parts = [result.summary];
-  if (includeChecklist) {
-    parts.push("", "---", "", "## Anti-slop reference (excerpt)", "", getReferenceDoc("avoid-ai-slop").split("\n").slice(0, 40).join("\n"), "…");
-  }
-  parts.push(
-    "",
-    "```json",
-    JSON.stringify(
-      {
-        status: result.status,
-        score: result.score,
-        passThreshold: PASS_SCORE,
-        findingCount: result.findingCount,
-        blockingCount: result.blockingCount,
-        warningCount: result.warningCount,
-      },
-      null,
-      2,
-    ),
-    "```",
-  );
-  return parts.join("\n");
+export async function reviewAndGate(target: string, options: { cwd?: string; blockingRules?: string[] } = {}): Promise<GateResult> {
+  const path = resolve(dirname(fileURLToPath(import.meta.url)), "..", "assets", "engine", "registry", "antipatterns.mjs");
+  if (!existsSync(path)) throw new DesignError("REGISTRY_INVALID", "Detector registry is missing; reinstall the package.");
+  const registry = validateRegistry((await import(pathToFileURL(path).href)).ANTIPATTERNS);
+  const report = await scanAntipatterns(target, options);
+  return evaluateGate(report, registry, options.blockingRules);
+}
+
+export function formatGateResult(result: GateResult, _includeChecklist = false): string {
+  return `## review_and_gate: ${result.status}\n\n${result.summary}\n\n` +
+    "Manual verification remains NOT_RUN until separately evidenced.\n\n```json\n" + JSON.stringify(result, null, 2) + "\n```";
 }
