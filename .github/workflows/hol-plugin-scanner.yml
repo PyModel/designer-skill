@@ -13,6 +13,7 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: HOL Plugin Scanner
@@ -24,3 +25,33 @@ jobs:
           fail_on_severity: high
           format: sarif
           upload_sarif: true
+      # The composite action skips its upload when its scanner step fails.
+      # Keep the failure intact and expose bounded, escaped diagnostics.
+      - name: Report scanner findings even on failure
+        if: ${{ always() }}
+        run: |
+          python3 -I - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = Path("ai-plugin-scanner.sarif")
+          if not report.is_file():
+              raise SystemExit("Scanner report missing; inspect the scanner step for its failure.")
+          if report.stat().st_size > 10 * 1024 * 1024:
+              raise SystemExit("Scanner report exceeds the 10 MiB diagnostic limit.")
+          findings = []
+          for run in json.loads(report.read_text(encoding="utf-8")).get("runs", []):
+              for result in run.get("results", []):
+                  locations = result.get("locations", [])
+                  location = locations[0].get("physicalLocation", {}) if locations else {}
+                  findings.append({
+                      "rule": result.get("ruleId"),
+                      "level": result.get("level"),
+                      "path": location.get("artifactLocation", {}).get("uri"),
+                      "line": location.get("region", {}).get("startLine"),
+                      "message": str(result.get("message", {}).get("text", ""))[:2000],
+                  })
+          print(f"Scanner reported {len(findings)} findings; showing at most 100.")
+          for finding in findings[:100]:
+              print(json.dumps(finding, ensure_ascii=True))
+          PY
