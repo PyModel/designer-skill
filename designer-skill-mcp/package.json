@@ -9,6 +9,7 @@
   },
   "files": [
     "dist",
+    "assets/ux-designer",
     "assets/skill",
     "assets/engine",
     "README.md"

@@ -4,6 +4,7 @@
 import { existsSync, rmSync, mkdirSync, cpSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SHIPPED_ROOTS } from "./shipped-roots.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, "..");
@@ -47,3 +48,13 @@ function syncSkillModule(skillName, destName, refSubdir) {
 
 syncSkillModule("designer-skill", "skill", "reference");
 syncSkillModule("ux-designer", "ux-designer", "references");
+
+// Guard the shipped surface: every assets/* dir this script writes must be
+// listed in the manifest (shipped-roots.mjs) so package.json "files", the
+// sync targets, and the tests can never drift apart again.
+for (const dest of ["assets/skill", "assets/ux-designer"]) {
+  if (!SHIPPED_ROOTS.includes(dest)) {
+    console.error(`[sync-skill] ERROR: synced dir ${dest} is missing from scripts/shipped-roots.mjs SHIPPED_ROOTS.`);
+    process.exit(1);
+  }
+}
