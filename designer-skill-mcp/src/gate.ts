@@ -1,8 +1,9 @@
 // Composite ship gate: detector + checklist summary + score + fix list.
 
-import { readFileSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { bundledFile } from "./assets.js";
 import { detectAntipatterns, formatDetectionResults, type DetectionFinding } from "./detect.js";
 import { getReferenceDoc } from "./skill.js";
 
@@ -17,14 +18,26 @@ export interface GateResult {
   summary: string;
 }
 
-const PASS_SCORE = 85;
+/** The ship-gate scoring contract. The one numeric source — every other
+ * mention (brief, dispatch text, tool descriptions, docs) derives from here. */
+export const GATE_CONTRACT = {
+  passScore: 85,
+  slopPenalty: 8,
+  warningPenalty: 3,
+} as const;
+
+/** Prose form of the pass rule, derived from GATE_CONTRACT. */
+export function gateRequirementText(): string {
+  return `score ≥${GATE_CONTRACT.passScore}, zero blocking slop`;
+}
+
+const PASS_SCORE = GATE_CONTRACT.passScore;
 
 let slopIds: Set<string> | null = null;
 
 async function loadSlopIds(): Promise<Set<string>> {
   if (slopIds) return slopIds;
-  const here = dirname(fileURLToPath(import.meta.url));
-  const registry = resolve(here, "..", "assets", "engine", "registry", "antipatterns.mjs");
+  const registry = bundledFile("engine", join("registry", "antipatterns.mjs"));
   if (!existsSync(registry)) {
     slopIds = new Set();
     return slopIds;
@@ -43,10 +56,10 @@ function scoreFindings(findings: DetectionFinding[], slop: Set<string>): { score
   for (const f of findings) {
     const isSlop = slop.has(f.antipattern);
     if (isSlop) {
-      score -= 8;
+      score -= GATE_CONTRACT.slopPenalty;
       blocking += 1;
     } else {
-      score -= 3;
+      score -= GATE_CONTRACT.warningPenalty;
       warnings += 1;
     }
   }

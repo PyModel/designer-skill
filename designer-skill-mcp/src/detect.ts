@@ -1,7 +1,8 @@
 // Programmatic anti-pattern detection — wraps the bundled detector engine.
 import { readFileSync, statSync, existsSync } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { extname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { bundledRoot } from "./assets.js";
 
 export interface DetectionFinding {
   file: string;
@@ -12,14 +13,13 @@ export interface DetectionFinding {
   importedBy?: string[];
 }
 
+type Engine = Awaited<ReturnType<typeof loadEngineOnce>>;
+
 function resolveEngineDir(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const bundled = resolve(here, "..", "assets", "engine");
-  if (existsSync(join(bundled, "detect-antipatterns.mjs"))) return bundled;
-  throw new Error("Detector engine not found in assets/engine. Run npm run build.");
+  return bundledRoot("engine");
 }
 
-async function loadEngine() {
+async function loadEngineOnce() {
   const engineDir = resolveEngineDir();
   const [
     { detectHtml },
@@ -57,6 +57,13 @@ async function loadEngine() {
     walkDir: fsMod.walkDir as (dir: string) => string[],
     buildImportGraph: fsMod.buildImportGraph as (files: string[]) => Map<string, Set<string>>,
   };
+}
+
+let enginePromise: Promise<Engine> | null = null;
+
+/** Load the vendored engine once per process; later calls reuse it. */
+function loadEngine(): Promise<Engine> {
+  return (enginePromise ??= loadEngineOnce());
 }
 
 export async function detectAntipatterns(
