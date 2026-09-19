@@ -23,7 +23,7 @@ When the **designer-skill** MCP server is connected:
 6. Implement. When writing or fixing CSS, pull `get_reference({ name: "css-techniques" })` for idiomatic patterns (centering, specificity, logical properties, container queries, `:has()`, `clamp()`).
 7. **`review_and_gate`** — scan changed files; score ≥85, zero blocking slop. Do not claim done on **FAIL**.
 
-Optional: `get_palette_seed` on greenfield (no committed brand colors); `detect_antipatterns` for ad-hoc scans; web-search MCP for contemporary UI references on visually-led net-new work (extract moves, don't copy layouts).
+Optional: `get_palette_seed` on greenfield (no committed brand colors); `detect_antipatterns` for ad-hoc scans; `find_ui_references` (niblet.com real-screen catalogue, needs NIBLET_TOKEN; falls back to web-search MCP) for contemporary UI references on visually-led net-new work (extract moves, don't copy layouts).
 
 If MCP is unavailable, read local `reference/` files using the routing map below.
 

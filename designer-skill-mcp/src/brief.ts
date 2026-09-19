@@ -81,6 +81,7 @@ Before declaring done: \`review_and_gate\` on changed files. Pass: ${gateRequire
 |---|---|
 | Distinctive / creative | \`differentiation-playbook\` |
 | Ban-list + checklist | \`avoid-ai-slop\` |
+| Real-screen references (optional) | \`find_ui_references\` — niblet.com catalogue, needs NIBLET_TOKEN |
 | Visual baseline | \`design-principles\` |
 | Aesthetic execution | \`aesthetic-systems\` |
 | Build pipeline | \`craft-flow\` |

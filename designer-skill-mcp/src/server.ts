@@ -20,6 +20,7 @@ import { pkg } from "./pkg.js";
 import { getPreflightBrief } from "./brief.js";
 import { commitDesignDirection, formatDesignDirectionResult, directionInputSchema } from "./direction.js";
 import { reviewAndGate, formatGateResult, gateRequirementText } from "./gate.js";
+import { findUiReferences, getDesignReference } from "./niblet.js";
 
 export const SERVER_NAME = "designer-skill-mcp";
 export const SERVER_VERSION = pkg.version;
@@ -238,6 +239,42 @@ export function createServer(): McpServer {
     },
     async ({ target, cwd, includeChecklistExcerpt }) =>
       text(formatGateResult(await reviewAndGate(target, { cwd: cwd ?? process.cwd() }), includeChecklistExcerpt === true)),
+  );
+
+  server.registerTool(
+    "find_ui_references",
+    {
+      title: "Find real-screen UI references (niblet.com catalogue)",
+      description:
+        "Searches the Niblet catalogue (niblet.com) for one to three real full-screen references matching a concrete UI question — extract moves, don't copy layouts. Optional: needs NIBLET_TOKEN in this server's environment; without it, returns setup guidance and the bundled references remain authoritative.",
+      inputSchema: {
+        query: z.string().min(1).max(240).describe("Concrete UI question, e.g. 'subscription settings with clear renewal status'."),
+        platform: z.enum(["web", "ios"]).optional().describe("Restrict results to one platform."),
+        limit: z.number().int().min(1).max(3).optional().describe("References to return (1–3, default 2)."),
+      },
+    },
+    async ({ query, platform, limit }) =>
+      text((await findUiReferences(query, { platform, limit })).text),
+  );
+
+  server.registerTool(
+    "get_design_reference",
+    {
+      title: "Read a recorded design reference (niblet.com catalogue)",
+      description:
+        "Reads the recorded colors, typography, and components behind a web screen returned by find_ui_references, or a design pack by slug. Optional: needs NIBLET_TOKEN; without it, returns setup guidance.",
+      inputSchema: {
+        screenId: z.string().min(1).max(160).optional().describe("Screen id from find_ui_references."),
+        packSlug: z.string().min(1).max(160).optional().describe("Design pack slug."),
+        sections: z
+          .array(z.enum(["overview", "colors", "typography", "components", "provenance"]))
+          .min(1)
+          .optional()
+          .describe("Sections to return; omit for the full document."),
+      },
+    },
+    async ({ screenId, packSlug, sections }) =>
+      text((await getDesignReference({ screenId, packSlug, sections })).text),
   );
 
   // ---- Prompt --------------------------------------------------------------

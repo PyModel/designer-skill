@@ -109,7 +109,9 @@ describe("designer-skill MCP server", () => {
         "commit_design_direction",
         "detect_antipatterns",
         "dispatch_intent",
+        "find_ui_references",
         "get_command",
+        "get_design_reference",
         "get_design_system",
         "get_palette_seed",
         "get_preflight_brief",
@@ -208,6 +210,17 @@ describe("designer-skill MCP server", () => {
   it("anti_slop_checklist returns the slop reference", async () => {
     const text = textOf(await client.callTool({ name: "anti_slop_checklist" }));
     expect(text).toContain("Avoiding AI Slop");
+  });
+
+  it("find_ui_references degrades to setup guidance without a token", async () => {
+    const saved = process.env.NIBLET_TOKEN;
+    delete process.env.NIBLET_TOKEN;
+    try {
+      const text = textOf(await client.callTool({ name: "find_ui_references", arguments: { query: "pricing page" } }));
+      expect(text).toContain("niblet.com/account");
+    } finally {
+      if (saved !== undefined) process.env.NIBLET_TOKEN = saved;
+    }
   });
 
   it("exposes the skill router resource and all reference resources", async () => {
