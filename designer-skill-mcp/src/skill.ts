@@ -1,10 +1,9 @@
 // Loads the bundled designer-skill and ux-designer markdown (SKILL.md + reference
-// files) and caches it. Resolves to the packaged copies (assets/skill +
-// assets/ux-designer) first, falling back to the sibling skills/ folders in local
-// development.
+// files) and caches it. Content resolution goes through the shared bundled-asset
+// seam in assets.ts (packaged assets/ first, sibling skills/ in dev).
 import { readFileSync, existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { bundledRoot } from "./assets.js";
 
 export const REFERENCE_NAMES = [
   "design-principles",
@@ -126,21 +125,7 @@ export const ALL_REFERENCE_NAMES = [...REFERENCE_NAMES, ...UX_REFERENCE_NAMES] a
 export type ReferenceId = ReferenceName | UxReferenceName;
 
 function resolveSkillDirs(): { skillDir: string; uxDir: string } {
-  const here = dirname(fileURLToPath(import.meta.url)); // dist/ (built) or src/ (tsx/vitest)
-  const pkgRoot = resolve(here, "..");
-  const bundledSkill = join(pkgRoot, "assets", "skill");
-  const bundledUx = join(pkgRoot, "assets", "ux-designer");
-  if (existsSync(join(bundledSkill, "SKILL.md")) && existsSync(join(bundledUx, "SKILL.md"))) {
-    return { skillDir: bundledSkill, uxDir: bundledUx };
-  }
-  const devSkill = resolve(pkgRoot, "..", "skills", "designer-skill");
-  const devUx = resolve(pkgRoot, "..", "skills", "ux-designer");
-  if (existsSync(join(devSkill, "SKILL.md")) && existsSync(join(devUx, "SKILL.md"))) {
-    return { skillDir: devSkill, uxDir: devUx };
-  }
-  throw new Error(
-    `designer-skill content not found. Looked in:\n  ${bundledSkill} + ${bundledUx}\n  ${devSkill} + ${devUx}\nRun "npm run sync-skill" to bundle it.`,
-  );
+  return { skillDir: bundledRoot("skill"), uxDir: bundledRoot("ux-designer") };
 }
 
 interface SkillCache {

@@ -259,7 +259,7 @@ export function createServer(): McpServer {
         from: z.string().optional().describe("Deterministic seed key (hashed to a seed)."),
       },
     },
-    async ({ id, from }) => ({ content: [{ type: "text", text: getPaletteSeed({ id, from }) }] }),
+    async ({ id, from }) => ({ content: [{ type: "text", text: await getPaletteSeed({ id, from }) }] }),
   );
 
   server.registerTool(
