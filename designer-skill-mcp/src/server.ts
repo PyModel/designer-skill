@@ -227,7 +227,7 @@ export function createServer(): McpServer {
     async ({ verb }) => {
       const help = formatCommandHelp(verb);
       const reads = getCommandReads(verb);
-      const refTexts = reads.map((name) => `## reference/${name}.md\n\n${getReferenceDoc(name)}`);
+      const refTexts = reads.map((name) => `## reference/${name}.md\n\n${getReferenceDoc(name as ReferenceId)}`);
       return { content: [{ type: "text", text: [help, ...refTexts].join("\n\n---\n\n") }] };
     },
   );

@@ -9,14 +9,14 @@
   },
   "files": [
     "dist",
-    "assets/ux-designer",
     "assets/skill",
+    "assets/ux-designer",
     "assets/engine",
     "README.md"
   ],
   "scripts": {
     "sync-skill": "node scripts/sync-skill.mjs",
-    "build": "npm run sync-skill && tsc && chmod +x dist/index.js",
+    "build": "npm run sync-skill && tsc && node scripts/render-playbook.mjs && chmod +x dist/index.js",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",

@@ -1,13 +1,55 @@
-// Deterministic intent -> verb -> reference-file routing. Mirrors the
-// command-playbook dispatch table. No LLM; pure keyword scoring.
-// Designer-skill verbs may cross-link ux-designer references (ux/…).
+// Deterministic intent -> verb -> reference-file routing. This module IS the
+// design-verb registry: verb -> cues, reads, note, and legacy aliases are
+// defined here exactly once. get_command/list_commands and the generated
+// command-playbook.md Read column all derive from VERB_REGISTRY.
+// No LLM; pure keyword scoring. Designer-skill verbs may cross-link
+// ux-designer references (ux/...).
 import type { ReferenceId } from "./skill.js";
+import { gateRequirementText } from "./gate.js";
 
 interface Verb {
   verb: string;
   cues: string[];
   files: ReferenceId[];
   note: string;
+}
+
+/** References every dispatch result forces, regardless of the matched verb. */
+export const ALWAYS_READS: ReferenceId[] = ["avoid-ai-slop"];
+
+/** Legacy verb names -> canonical command. */
+export const COMMAND_ALIASES: Record<string, string> = {
+  init: "setup",
+  craft: "build",
+  shape: "plan",
+  live: "preview",
+  document: "spec",
+  audit: "check",
+  critique: "review",
+  score: "review",
+  typeset: "type",
+  colorize: "color",
+  animate: "motion",
+  adapt: "responsive",
+  distill: "simplify",
+  clarify: "copy",
+  harden: "ship",
+  optimize: "speed",
+  extract: "tokens",
+  redesign: "refresh",
+  variants: "options",
+  polish: "finish",
+  bolder: "amplify",
+  quieter: "calm",
+  overdrive: "push",
+  navigate: "nav",
+  feel: "tone",
+};
+
+/** Reads for a canonical or legacy verb; playbook fallback for unknowns. */
+export function readsFor(verb: string): ReferenceId[] {
+  const canonical = COMMAND_ALIASES[verb.toLowerCase()] ?? verb.toLowerCase();
+  return VERB_REGISTRY[canonical]?.files ?? ["command-playbook", "design-principles"];
 }
 
 const VERBS: Verb[] = [
@@ -277,6 +319,10 @@ const VERBS: Verb[] = [
   },
 ];
 
+/** The single design-verb registry keyed by verb. Dispatch priority follows array order above. */
+export const VERB_REGISTRY: Record<string, Verb> = Object.fromEntries(
+  VERBS.map((v) => [v.verb, v]),
+) as Record<string, Verb>;
 export interface DispatchMatch {
   verb: string;
   files: ReferenceId[];
@@ -304,7 +350,7 @@ export function dispatchIntent(request: string): DispatchResult {
 
   const reads = new Set<ReferenceId>();
   for (const m of scored) for (const f of m.files) reads.add(f);
-  reads.add("avoid-ai-slop");
+  for (const f of ALWAYS_READS) reads.add(f);
   if (scored.length === 0) {
     reads.add("differentiation-playbook");
     reads.add("command-playbook");
@@ -324,7 +370,7 @@ export function dispatchIntent(request: string): DispatchResult {
     }
   }
   lines.push(
-    `\nThen call review_and_gate before declaring done (score ≥85, zero blocking slop).`,
+    `\nThen call review_and_gate before declaring done (${gateRequirementText()}).`,
   );
   lines.push(`\nRecommended reads: ${recommendedReads.join(", ")}.`);
 
