@@ -1,72 +1,41 @@
-// The design-verb registry (dispatch.ts) is the single owner of verb → reads.
-// These tests hold every derived surface to it.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, it, expect } from "vitest";
-import { VERB_REGISTRY, COMMAND_ALIASES, readsFor } from "../src/dispatch.js";
-import { isReferenceName } from "../src/skill.js";
-import { getCommandMetadata } from "../src/commands.js";
-import { GATE_CONTRACT } from "../src/gate.js";
+import { describe, expect, it } from "vitest";
 
-const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const repoRoot = resolve(pkgRoot, "..");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-describe("design-verb registry", () => {
-  it("every registry read is a valid reference id", () => {
-    const verbs = Object.keys(VERB_REGISTRY);
-    expect(verbs.length).toBeGreaterThanOrEqual(40);
-    for (const [verb, v] of Object.entries(VERB_REGISTRY)) {
-      for (const f of v.files) {
-        expect(isReferenceName(f), `${verb} reads unknown reference "${f}"`).toBe(true);
-      }
+describe("command registry (single source: command-metadata.json)", () => {
+  it("every registry read names a real reference (designer-skill or ux namespace)", async () => {
+    const { getCommandMetadata } = await import("../src/commands.js");
+    const { ALL_REFERENCE_NAMES } = await import("../src/skill.js");
+    const valid = new Set<string>(ALL_REFERENCE_NAMES);
+    for (const [verb, meta] of Object.entries(getCommandMetadata())) {
+      expect(meta.reads.length, verb).toBeGreaterThan(0);
+      for (const name of meta.reads) expect(valid.has(name), `${verb} reads ${name}`).toBe(true);
     }
   });
 
-  it("aliases resolve to registry verbs", () => {
-    for (const [alias, canonical] of Object.entries(COMMAND_ALIASES)) {
-      expect(VERB_REGISTRY[canonical], `alias "${alias}" points at missing verb "${canonical}"`).toBeDefined();
+  it("aliases resolve and list_commands equals the registry verbs", async () => {
+    const { getCommandMetadata, resolveCommandVerb, listCommands } = await import("../src/commands.js");
+    const meta = getCommandMetadata();
+    expect(listCommands().map((c) => c.verb).sort()).toEqual(Object.keys(meta).sort());
+    for (const [verb, { aliases }] of Object.entries(meta)) {
+      for (const alias of aliases) expect(resolveCommandVerb(alias).canonical).toBe(verb);
     }
   });
 
-  it("every command-metadata verb exists in the registry", () => {
-    for (const verb of Object.keys(getCommandMetadata())) {
-      const canonical = COMMAND_ALIASES[verb] ?? verb;
-      expect(VERB_REGISTRY[canonical], `command-metadata verb "${verb}" missing from the registry`).toBeDefined();
-    }
+  it("bundled assets/skill registry matches the canonical skills/ source", () => {
+    const canonical = readFileSync(join(repoRoot, "skills", "designer-skill", "scripts", "command-metadata.json"), "utf8");
+    const bundled = join(repoRoot, "designer-skill-mcp", "assets", "skill", "scripts", "command-metadata.json");
+    if (!existsSync(bundled)) return; // not built yet; pack.test.ts covers the packed artifact
+    expect(readFileSync(bundled, "utf8")).toBe(canonical);
   });
 
-  it("readsFor serves registry files, canonical or legacy", () => {
-    expect(readsFor("check")).toEqual(VERB_REGISTRY.check!.files);
-    expect(readsFor("audit")).toEqual(VERB_REGISTRY.check!.files);
-    expect(readsFor("css")).toContain("css-techniques");
-  });
-});
-
-describe("derived documentation", () => {
-  const playbook = readFileSync(
-    join(repoRoot, "skills", "designer-skill", "reference", "command-playbook.md"),
-    "utf8",
-  );
-
-  it("playbook Read column matches the registry exactly", () => {
-    let inTable = false;
-    const checked: string[] = [];
-    for (const line of playbook.split("\n")) {
-      if (line.startsWith("## ")) inTable = line.startsWith("## Dispatch table");
-      if (!inTable || !line.startsWith("|")) continue;
-      const cells = line.split("|").map((c) => c.trim());
-      const verb = cells[1];
-      if (!verb || cells.length < 6 || !VERB_REGISTRY[verb]) continue;
-      const expected = VERB_REGISTRY[verb]!.files.map((f) => `${f}.md`).join(", ");
-      expect(cells[4], `playbook Read column for "${verb}" drifted from the registry`).toBe(expected);
-      checked.push(verb);
-    }
-    expect(checked.length, "expected the dispatch table to cover several registry verbs").toBeGreaterThan(5);
-  });
-
-  it("SKILL.md states the same gate threshold as GATE_CONTRACT", () => {
+  it("SKILL.md and the playbook route command discovery through the registry", () => {
     const skill = readFileSync(join(repoRoot, "skills", "designer-skill", "SKILL.md"), "utf8");
-    expect(skill).toContain(`≥${GATE_CONTRACT.passScore}`);
+    expect(skill).toContain("dispatch_intent");
+    const playbook = readFileSync(join(repoRoot, "skills", "designer-skill", "reference", "command-playbook.md"), "utf8");
+    expect(playbook).toContain("command-metadata.json");
   });
 });

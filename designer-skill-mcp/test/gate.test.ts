@@ -1,56 +1,47 @@
-// Behavioral tests for the ship gate: the interface is scan + gate, exercised
-// with fixture files. This is the coverage the gate never had.
-import { describe, it, expect } from "vitest";
-import { reviewAndGate, GATE_CONTRACT, gateRequirementText } from "../src/gate.js";
-import { detectAntipatterns } from "../src/detect.js";
-import { join, dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { reviewAndGate, validateRegistry } from "../src/gate.js";
+import { scanAntipatterns } from "../src/detect.js";
 
-const fixturesDir = resolve(dirname(fileURLToPath(import.meta.url)), "fixtures");
+const roots: string[] = [];
+function root(): string {
+  const path = mkdtempSync(join(tmpdir(), "designer-gate-")); roots.push(path); return path;
+}
+afterEach(() => { for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
-describe("GATE_CONTRACT", () => {
-  it("exposes the scoring contract once", () => {
-    expect(GATE_CONTRACT.passScore).toBe(85);
-    expect(GATE_CONTRACT.slopPenalty).toBe(8);
-    expect(GATE_CONTRACT.warningPenalty).toBe(3);
-    expect(gateRequirementText()).toBe(`score ≥${GATE_CONTRACT.passScore}, zero blocking slop`);
+describe("bundled detector integration", () => {
+  it("does not pass empty directories", async () => {
+    const result = await reviewAndGate(".", { cwd: root() });
+    expect(result.code).toBe("NO_SCAN_COVERAGE"); expect(result.status).toBe("FAIL");
   });
-});
-
-describe("reviewAndGate on fixtures", () => {
-  it("clean markup passes with a perfect score", async () => {
-    const result = await reviewAndGate(join(fixturesDir, "clean.html"), { cwd: fixturesDir });
-    expect(result.status).toBe("PASS");
-    expect(result.score).toBe(100);
-    expect(result.blockingCount).toBe(0);
-    expect(result.warningCount).toBe(0);
+  it("reports scanned files and hashes without certifying UI readiness", async () => {
+    const cwd = root(); writeFileSync(join(cwd, "fixture.css"), ".fixture { display: block; }\n");
+    const result = await reviewAndGate("fixture.css", { cwd });
+    expect(result.coverage.scannedFiles).toBe(1);
+    expect(result.files[0].sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.status).not.toBe("PASS"); expect(result.checks.find((c) => c.id === "rendered")?.status).toBe("NOT_RUN");
   });
-
-  it("slop markup fails with blocking findings and a consistent score", async () => {
-    const result = await reviewAndGate(join(fixturesDir, "slop.html"), { cwd: fixturesDir });
-    expect(result.status).toBe("FAIL");
-    expect(result.blockingCount).toBeGreaterThanOrEqual(1);
-    expect(result.score).toBe(
-      Math.max(0, 100 - result.blockingCount * GATE_CONTRACT.slopPenalty - result.warningCount * GATE_CONTRACT.warningPenalty),
-    );
-    expect(result.summary).toContain("review_and_gate: FAIL");
-    expect(result.fixes.some((f) => f.startsWith("[BLOCKING]"))).toBe(true);
+  it("cannot pass ignored-only scans", async () => {
+    const cwd = root(); mkdirSync(join(cwd, ".designer-skill"));
+    writeFileSync(join(cwd, "fixture.css"), ".fixture { display: block; }");
+    writeFileSync(join(cwd, ".designer-skill/config.json"), JSON.stringify({ detector: { ignoreFiles: ["fixture.css"] } }));
+    const result = await reviewAndGate("fixture.css", { cwd });
+    expect(result.coverage.ignoredFiles).toBe(1); expect(result.code).toBe("NO_SCAN_COVERAGE");
   });
-
-  it("detectAntipatterns surfaces slop ids deterministically", async () => {
-    const findings = await detectAntipatterns(join(fixturesDir, "slop.html"), { cwd: fixturesDir });
-    const ids = findings.map((f) => f.antipattern);
-    expect(ids).toContain("side-tab");
-    expect(ids.length).toBeGreaterThan(0);
-    // Same input, same output — no LLM, no nondeterminism.
-    const again = await detectAntipatterns(join(fixturesDir, "slop.html"), { cwd: fixturesDir });
-    expect(again.map((f) => `${f.antipattern}:${f.line}`).sort()).toEqual(
-      findings.map((f) => `${f.antipattern}:${f.line}`).sort(),
-    );
+  it("rejects malformed config instead of using silent defaults", async () => {
+    const cwd = root(); mkdirSync(join(cwd, ".designer-skill"));
+    writeFileSync(join(cwd, ".designer-skill/config.json"), "{not json");
+    await expect(scanAntipatterns(".", { cwd })).rejects.toMatchObject({ code: "CONFIG_INVALID" });
   });
-
-  it("clean markup detects nothing", async () => {
-    const findings = await detectAntipatterns(join(fixturesDir, "clean.html"), { cwd: fixturesDir });
-    expect(findings).toEqual([]);
+  it("rejects external targets and symlink escapes", async () => {
+    const cwd = root(), outside = root(); writeFileSync(join(outside, "private.css"), "body {}");
+    await expect(scanAntipatterns(join(outside, "private.css"), { cwd })).rejects.toMatchObject({ code: "SCOPE_VIOLATION" });
+    symlinkSync(join(outside, "private.css"), join(cwd, "escape.css"));
+    await expect(scanAntipatterns(".", { cwd })).rejects.toMatchObject({ code: "SCOPE_VIOLATION" });
+  });
+  it("fails closed on malformed registry metadata", () => {
+    expect(() => validateRegistry(undefined)).toThrow(); expect(() => validateRegistry([])).toThrow();
   });
 });

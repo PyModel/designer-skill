@@ -1,60 +1,55 @@
-// Copies the canonical skills/designer-skill/ and skills/ux-designer/ folders into
-// assets/skill + assets/ux-designer so the published npm package is self-contained.
-// skills/ folders remain the single source of truth.
-import { existsSync, rmSync, mkdirSync, cpSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { SHIPPED_ROOTS } from "./shipped-roots.mjs";
+// Canonical skill content is copied into the self-contained npm package.
+// skills/ is the single source of truth. Every synced assets/ directory must be
+// declared in shipped-roots.mjs (the manifest of the shipped surface), so the
+// sync step can never produce a bundled directory the package whitelist omits.
+import { existsSync, mkdirSync, cpSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { dirname, join, resolve, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { SHIPPED_DIR_ROOTS } from './shipped-roots.mjs';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const pkgRoot = resolve(here, "..");
+const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-function syncSkillModule(skillName, destName, refSubdir) {
-  const src = resolve(pkgRoot, "..", "skills", skillName);
-  const dest = join(pkgRoot, "assets", destName);
+const MODULES = [
+  { src: resolve(pkgRoot, '..', 'skills', 'designer-skill'), dest: 'skill', subdirs: ['reference', 'scripts', 'schemas'] },
+  { src: resolve(pkgRoot, '..', 'skills', 'ux-designer'), dest: 'ux-designer', subdirs: ['references'] },
+];
 
-  if (!existsSync(join(src, "SKILL.md"))) {
-    if (existsSync(join(dest, "SKILL.md"))) {
-      console.log(`[sync-skill] source not found at ${src}; using bundled assets/${destName}.`);
-      return false;
-    }
-    console.error(`[sync-skill] ERROR: no ${skillName} source at ${src} and no bundled copy at ${dest}.`);
-    process.exit(1);
-  }
-
-  rmSync(dest, { recursive: true, force: true });
-  mkdirSync(join(dest, refSubdir), { recursive: true });
-  cpSync(join(src, "SKILL.md"), join(dest, "SKILL.md"));
-
-  const refDir = join(src, refSubdir);
-  let refCount = 0;
-  for (const f of readdirSync(refDir)) {
-    if (f.endsWith(".md")) {
-      cpSync(join(refDir, f), join(dest, refSubdir, f));
-      refCount++;
+function hashDirectory(root, dir, files) {
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) hashDirectory(root, path, files);
+    else if (entry.isFile()) {
+      const rel = relative(root, path).split('\\').join('/');
+      files[rel] = createHash('sha256').update(readFileSync(path)).digest('hex');
+    } else {
+      throw new Error(`Unsupported packaged entry: ${entry.name}`);
     }
   }
-
-  const scriptsSrc = join(src, "scripts");
-  let scriptCount = 0;
-  if (existsSync(scriptsSrc)) {
-    cpSync(scriptsSrc, join(dest, "scripts"), { recursive: true });
-    scriptCount = readdirSync(scriptsSrc).filter((f) => f.endsWith(".mjs") || f.endsWith(".json")).length;
-  }
-
-  console.log(`[sync-skill] synced ${skillName}: SKILL.md + ${refCount} reference files + scripts → ${dest} (${scriptCount} script entries)`);
-  return true;
 }
 
-syncSkillModule("designer-skill", "skill", "reference");
-syncSkillModule("ux-designer", "ux-designer", "references");
-
-// Guard the shipped surface: every assets/* dir this script writes must be
-// listed in the manifest (shipped-roots.mjs) so package.json "files", the
-// sync targets, and the tests can never drift apart again.
-for (const dest of ["assets/skill", "assets/ux-designer"]) {
-  if (!SHIPPED_ROOTS.includes(dest)) {
-    console.error(`[sync-skill] ERROR: synced dir ${dest} is missing from scripts/shipped-roots.mjs SHIPPED_ROOTS.`);
-    process.exit(1);
+for (const { src, dest: destName, subdirs } of MODULES) {
+  const shipped = `assets/${destName}`;
+  if (!SHIPPED_DIR_ROOTS.includes(shipped)) {
+    throw new Error(`${shipped} is synced but missing from SHIPPED_ROOTS; the npm whitelist and the shipped surface would diverge.`);
   }
+
+  if (!existsSync(join(src, 'SKILL.md'))) {
+    throw new Error(`Canonical skill source is missing (${src}). Refusing to publish stale bundled assets.`);
+  }
+  for (const dir of subdirs) {
+    if (!existsSync(join(src, dir))) throw new Error(`Missing canonical skill directory: ${join(src, dir)}`);
+  }
+
+  // The target is a fixed generated, gitignored directory, never a caller-supplied path.
+  const dest = join(pkgRoot, 'assets', destName);
+  rmSync(dest, { recursive: true, force: true });
+  mkdirSync(dest, { recursive: true });
+  cpSync(join(src, 'SKILL.md'), join(dest, 'SKILL.md'));
+  for (const dir of subdirs) cpSync(join(src, dir), join(dest, dir), { recursive: true });
+
+  const files = {};
+  hashDirectory(dest, dest, files);
+  writeFileSync(join(dest, 'manifest.json'), JSON.stringify({ schemaVersion: 1, algorithm: 'sha256', files }, null, 2) + '\n');
+  console.log(`[sync-skill] bundled ${destName}: ${Object.keys(files).length} files with content hashes`);
 }

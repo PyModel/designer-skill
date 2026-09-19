@@ -1,8 +1,10 @@
 # @pymodel/designer-skill-mcp
 
-Plug-and-play [MCP](https://modelcontextprotocol.io) server that gives your coding agent **UI superpowers**.
+MCP guidance and static verification for UI design, implementation and review. Use project evidence first, preserve authorized scope, and distinguish a static check from rendered UI readiness.
 
-Add one line to your agent config. No API key. Your agent gets design tools, reference docs, and a ship gate.
+> This source revision introduces gate result schema v2. It is not an npm release. Existing published packages can retain the previous contract until a coordinated release. Read [the migration guide](../docs/HARDENING.md) before updating clients.
+
+## Install a published release
 
 ```json
 {
@@ -15,83 +17,74 @@ Add one line to your agent config. No API key. Your agent gets design tools, ref
 }
 ```
 
-**Registry** (after npm publish, from `designer-skill-mcp/`):
+Use an explicitly selected version for a reproducible deployment. Installing `@latest` does not install an unmerged development branch. No model API key is required by the guidance tools. The host must authorize the project root and any file changes.
 
-```bash
-brew install mcp-publisher
-mcp-publisher login github
-mcp-publisher publish
-```
+## Workflow and tools
 
-## Tools
+Start with `get_preflight_brief`, then `load_project_context` using the actual **absolute** project directory. Audit and planning requests do not authorize implementation edits. Missing PRODUCT.md does not discard DESIGN.md or force setup.
 
 | Tool | Purpose |
 |---|---|
-| `get_design_system` | SKILL.md router (call first) |
-| `load_project_context` | Read PRODUCT.md / DESIGN.md from the project |
-| `get_reference` | One of fifteen reference files by name |
-| `list_commands` | All design verbs with descriptions |
-| `get_command` | Full guidance + references for a specific verb |
-| `dispatch_intent` | Map a request ("make it pop", "it feels off") to design verb(s) + files |
-| `detect_antipatterns` | Deterministic scan (44 rules), no LLM, no API key |
-| `get_palette_seed` | OKLCH brand-seed for greenfield palette work |
-| `anti_slop_checklist` | Ship gate before finishing any UI work |
+| `get_preflight_brief` | Compact scope and verification contract; call first |
+| `load_project_context` | Read PRODUCT.md and DESIGN.md independently; requires `cwd` |
+| `get_design_system` | Full SKILL.md contract and reference routing map |
+| `get_reference` | Load one named reference on demand |
+| `list_commands` | Discover canonical commands and aliases through help |
+| `get_command` | Command help and reference names, not eagerly loaded documents |
+| `dispatch_intent` | Route requests with explicit negative triggers and deferred reads |
+| `commit_design_direction` | Validate inspected `contextSources` and preservation/new-direction inputs |
+| `get_palette_seed` | Optional seed for an authorized new palette |
+| `detect_antipatterns` | Bounded static scan with coverage and file hashes; requires `cwd` and `target` |
+| `review_and_gate` | Static status, findings and unverified UI checks; requires `cwd` and `target` |
+| `anti_slop_checklist` | Advisory style, truthful-content and completeness guidance |
 
-**Resources:** `designer://skill` · `designer://reference/{name}`
+**Resources:** `designer://skill` and `designer://reference/{name}`.
 
-**Prompt:** `design` (args: `task`, optional `aesthetic`)
+**Prompt:** `design`, with `task` and optional `aesthetic`. The prompt does not load the entire reference library.
 
-## Dev
+A direction PASS validates input only; it does not persist approval or prevent writes through other tools. `review_and_gate` exposes `staticStatus: PASS | FAIL`, but overall `status` and `uiReadiness` are `FAIL | NOT_VERIFIED`. There is no aesthetic score or overall static-only PASS. Required browser, functional and accessibility checks need separate evidence.
 
-```bash
-npm install
+Style rules are advisory unless explicitly adopted through `blockingRules`. Empty/ignored-only scans, invalid registry/configuration and unsupported scope never become success. Refresh client tool schemas and restart long-lived processes when migrating.
+
+## Development and validation
+
+Run from this directory. CI exercises Node 22 and 24 with the committed lockfile.
+
+```sh
+npm ci
 npm run build
+node --test checks/core.mjs
 npm test
+node scripts/verify-package.mjs
 node dist/index.js
-# or: npx -y @pymodel/designer-skill-mcp
 ```
+
+The canonical skill is `skills/designer-skill/`. Build copies its router, references, scripts and schemas into `assets/skill/` and writes content hashes. Missing canonical source fails instead of silently publishing stale content.
+
+Packed-content verification unpacks outside the checkout and validates packaged documents, schemas, hashes and command routing. It is not a browser test or a clean dependency-install test. See [the migration guide](../docs/HARDENING.md) for scope limits, evidence semantics and rollback.
 
 ## Version and updates
 
-The server does **not** auto-install updates. On startup it may show a weekly stderr notice when a newer npm release exists.
+The server does not auto-install updates. It may display an update notice on stderr.
 
-```bash
-designer-skill-mcp --version        # print installed version
-designer-skill-mcp --check-update   # query npm and print upgrade status
+```sh
+designer-skill-mcp --version
+designer-skill-mcp --check-update
 ```
 
-Upgrade:
+Disable update notices with `NO_UPDATE_NOTIFIER=1` or `--no-update-notifier`.
 
-```bash
-npx -y @pymodel/designer-skill-mcp@latest
-```
-
-Opt out: `NO_UPDATE_NOTIFIER=1`, `--no-update-notifier`, or configstore (`~/.config/configstore/update-notifier-designer-skill-mcp.json`).
-
-**Plugin installs** (Claude Code / Codex / Cursor) are separate from npm — bump the plugin version on release, then:
-
-```bash
-/plugin marketplace update pymodel
-/plugin update designer-skill@pymodel
-```
-
-Cursor: reinstall or update the plugin from marketplace; MCP args live in repo `mcp.json`.
-
-Canonical skill content: `skills/designer-skill/` (synced to `assets/skill/` on build).
+Plugin installations and npm installations are separate. Publish coordinated versions and refresh the relevant client installation; do not assume changing source updates an installed server.
 
 ## Release
 
-From repo root (see `skills/release/SKILL.md`):
+From the repository root, follow `skills/release/SKILL.md`:
 
-```bash
-./scripts/release.sh "What changed in this release."
+```sh
+./scripts/release.sh "Describe the verified changes."
 ```
 
-**Default bump:** +0.1.0 minor (`0.10.0` → `0.11.0`). Pass an explicit semver only for hotfixes or breaking releases:
-
-```bash
-./scripts/release.sh 0.11.1 "Hotfix."
-```
+Do not publish this contract under a previously released version. Require build, tests, packaging and security checks before release. The package engine range remains unchanged in this source patch; reconcile the publication floor with verified dependency requirements during release.
 
 ## License
 
