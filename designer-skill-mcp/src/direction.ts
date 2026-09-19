@@ -1,4 +1,5 @@
 // Validates a design-direction commit before the agent writes UI code.
+import { z } from "zod";
 
 export type Register = "brand" | "product";
 
@@ -212,3 +213,60 @@ export function formatDesignDirectionResult(result: DesignDirectionResult): stri
   }
   return lines.join("\n");
 }
+
+/** The commit_design_direction input contract, defined once here — the MCP
+ * tool registration spreads this shape instead of restating every field. */
+export const directionInputSchema = {
+  register: z.enum(["brand", "product"]).describe("brand = distinctiveness bar; product = earned familiarity bar."),
+  designRead: z
+    .string()
+    .min(40)
+    .describe("One sentence naming the surface, audience, and intended visual language."),
+  designVariance: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .describe("1 = strict symmetry and convention; 10 = expressive, off-grid composition."),
+  motionIntensity: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .describe("1 = static; 10 = cinematic or physics-led. Accessibility still overrides the dial."),
+  visualDensity: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .describe("1 = gallery-like and airy; 10 = compact, information-dense cockpit."),
+  aesthetic: z
+    .string()
+    .min(1)
+    .describe("One of: minimalist, brutalist, soft, high-end-stitch, brand-identity, product."),
+  physicalScene: z
+    .string()
+    .min(1)
+    .describe("One sentence: who, where, light, mood — must force light/dark and tone."),
+  layoutFamilies: z
+    .array(z.string().min(1))
+    .min(1)
+    .describe("Layout patterns for this surface (≥2 for brand, ≥1 for product)."),
+  typographyDirection: z
+    .string()
+    .min(1)
+    .describe("Font pairing + scale approach, e.g. grotesk display + humanist body, 1.333 ratio."),
+  antiSlopRisks: z
+    .array(z.string().min(1))
+    .min(2)
+    .describe("≥2 specific AI-slop tells you are actively avoiding on this surface."),
+  inverseTestPass: z.boolean().describe("true only when the inverse test passes — category-modal descriptions must be reworked."),
+  inverseTestDescription: z
+    .string()
+    .min(1)
+    .describe("Why this direction is NOT category-modal (specific user + visual lane, not industry template copy)."),
+  namedReferences: z
+    .array(z.string().min(1))
+    .optional()
+    .describe("Optional: 2–3 real sites/products with one extracted move each."),
+};

@@ -6,22 +6,20 @@ import {
   getSkillRouter,
   getReferenceDoc,
   isReferenceName,
-  REFERENCE_NAMES,
   REFERENCE_DESCRIPTIONS,
-  UX_REFERENCE_NAMES,
   UX_REFERENCE_DESCRIPTIONS,
   ALL_REFERENCE_NAMES,
   type ReferenceId,
 } from "./skill.js";
-import { dispatchIntent } from "./dispatch.js";
+import { dispatchIntent, ALWAYS_READS } from "./dispatch.js";
 import { listCommands, formatCommandHelp, getCommandReads } from "./commands.js";
 import { loadProjectContext, formatProjectContext } from "./context.js";
 import { detectAntipatterns, formatDetectionResults } from "./detect.js";
 import { getPaletteSeed } from "./palette.js";
 import { pkg } from "./pkg.js";
 import { getPreflightBrief } from "./brief.js";
-import { commitDesignDirection, formatDesignDirectionResult } from "./direction.js";
-import { reviewAndGate, formatGateResult } from "./gate.js";
+import { commitDesignDirection, formatDesignDirectionResult, directionInputSchema } from "./direction.js";
+import { reviewAndGate, formatGateResult, gateRequirementText } from "./gate.js";
 
 export const SERVER_NAME = "designer-skill-mcp";
 export const SERVER_VERSION = pkg.version;
@@ -35,6 +33,9 @@ export const SERVER_INSTRUCTIONS = [
   "4. Call review_and_gate before claiming the work is done: do not claim done on FAIL.",
   "Read reference files on demand; do not design from memory. Not for backend, CLI, or non-UI code.",
 ].join("\n");
+
+/** Every tool returns one text block; this is the whole envelope. */
+const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 
 export function createServer(): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: SERVER_INSTRUCTIONS });
@@ -92,7 +93,7 @@ export function createServer(): McpServer {
       description:
         "Returns the compact binding workflow (register, aesthetic commitment, inverse test, slop bans, layout/type rules, ship gate): call FIRST before any UI code, then commit_design_direction, then dispatch_intent.",
     },
-    async () => ({ content: [{ type: "text", text: getPreflightBrief() }] }),
+    async () => text(getPreflightBrief()),
   );
 
   server.registerTool(
@@ -101,64 +102,9 @@ export function createServer(): McpServer {
       title: "Commit design direction before code",
       description:
         "Required checkpoint before writing UI code. Submit a one-line design read, three calibration dials, register, aesthetic system, physical scene, layout families, typography direction, anti-slop risks, and inverse-test result. Returns PASS (proceed) or FAIL (fix and resubmit).",
-      inputSchema: {
-        register: z.enum(["brand", "product"]).describe("brand = distinctiveness bar; product = earned familiarity bar."),
-        designRead: z
-          .string()
-          .min(40)
-          .describe("One sentence naming the surface, audience, and intended visual language."),
-        designVariance: z
-          .number()
-          .int()
-          .min(1)
-          .max(10)
-          .describe("1 = strict symmetry and convention; 10 = expressive, off-grid composition."),
-        motionIntensity: z
-          .number()
-          .int()
-          .min(1)
-          .max(10)
-          .describe("1 = static; 10 = cinematic or physics-led. Accessibility still overrides the dial."),
-        visualDensity: z
-          .number()
-          .int()
-          .min(1)
-          .max(10)
-          .describe("1 = gallery-like and airy; 10 = compact, information-dense cockpit."),
-        aesthetic: z
-          .string()
-          .min(1)
-          .describe("One of: minimalist, brutalist, soft, high-end-stitch, brand-identity, product."),
-        physicalScene: z
-          .string()
-          .min(1)
-          .describe("One sentence: who, where, light, mood — must force light/dark and tone."),
-        layoutFamilies: z
-          .array(z.string().min(1))
-          .min(1)
-          .describe("Layout patterns for this surface (≥2 for brand, ≥1 for product)."),
-        typographyDirection: z
-          .string()
-          .min(1)
-          .describe("Font pairing + scale approach, e.g. grotesk display + humanist body, 1.333 ratio."),
-        antiSlopRisks: z
-          .array(z.string().min(1))
-          .min(2)
-          .describe("≥2 specific AI-slop tells you are actively avoiding on this surface."),
-        inverseTestPass: z.boolean().describe("true only when the inverse test passes — category-modal descriptions must be reworked."),
-        inverseTestDescription: z
-          .string()
-          .min(1)
-          .describe("Why this direction is NOT category-modal (specific user + visual lane, not industry template copy)."),
-        namedReferences: z
-          .array(z.string().min(1))
-          .optional()
-          .describe("Optional: 2–3 real sites/products with one extracted move each."),
-      },
+      inputSchema: directionInputSchema,
     },
-    async (input) => ({
-      content: [{ type: "text", text: formatDesignDirectionResult(commitDesignDirection(input)) }],
-    }),
+    async (input) => text(formatDesignDirectionResult(commitDesignDirection(input))),
   );
 
   server.registerTool(
@@ -168,7 +114,7 @@ export function createServer(): McpServer {
       description:
         "Returns the full SKILL.md router. For UI tasks, prefer get_preflight_brief first (compact). Use this for deep routing map and reference index.",
     },
-    async () => ({ content: [{ type: "text", text: getSkillRouter() }] }),
+    async () => text(getSkillRouter()),
   );
 
   server.registerTool(
@@ -178,7 +124,7 @@ export function createServer(): McpServer {
       description: `Returns the full text of one reference file (designer-skill or ux-designer, ux files are namespaced ux/…). Valid names: ${ALL_REFERENCE_NAMES.join(", ")}.`,
       inputSchema: { name: z.enum(ALL_REFERENCE_NAMES) },
     },
-    async ({ name }) => ({ content: [{ type: "text", text: getReferenceDoc(name as ReferenceId) }] }),
+    async ({ name }) => text(getReferenceDoc(name as ReferenceId)),
   );
 
   server.registerTool(
@@ -189,7 +135,7 @@ export function createServer(): McpServer {
         "Maps a natural-language UI request (e.g. 'make it pop', 'the spacing feels off', 'make it production-ready') to the design verb(s) and reference files to read before implementing.",
       inputSchema: { request: z.string().min(1).describe("What the user wants done to the UI.") },
     },
-    async ({ request }) => ({ content: [{ type: "text", text: dispatchIntent(request).text }] }),
+    async ({ request }) => text(dispatchIntent(request).text),
   );
 
   server.registerTool(
@@ -199,7 +145,7 @@ export function createServer(): McpServer {
       description:
         "Returns the designer-skill anti-AI-slop reference: the tell ban-list, category-reflex checks, the output-completeness contract, and the final checklist. Run before declaring any UI work done.",
     },
-    async () => ({ content: [{ type: "text", text: getReferenceDoc("avoid-ai-slop") }] }),
+    async () => text(getReferenceDoc("avoid-ai-slop")),
   );
 
   server.registerTool(
@@ -210,9 +156,10 @@ export function createServer(): McpServer {
         "Returns all design verbs (setup, build, preview, check, finish, amplify, …) with descriptions and argument hints. Use to discover the command vocabulary before calling get_command.",
     },
     async () => {
-      const cmds = listCommands();
-      const lines = cmds.map((c) => `- **${c.verb}** — ${c.description}${c.argumentHint ? ` \`${c.argumentHint}\`` : ""}`);
-      return { content: [{ type: "text", text: `# designer-skill commands\n\n${lines.join("\n")}` }] };
+      const lines = listCommands().map(
+        (c) => `- **${c.verb}** — ${c.description}${c.argumentHint ? ` \`${c.argumentHint}\`` : ""}`,
+      );
+      return text(`# designer-skill commands\n\n${lines.join("\n")}`);
     },
   );
 
@@ -226,9 +173,8 @@ export function createServer(): McpServer {
     },
     async ({ verb }) => {
       const help = formatCommandHelp(verb);
-      const reads = getCommandReads(verb);
-      const refTexts = reads.map((name) => `## reference/${name}.md\n\n${getReferenceDoc(name as ReferenceId)}`);
-      return { content: [{ type: "text", text: [help, ...refTexts].join("\n\n---\n\n") }] };
+      const refTexts = getCommandReads(verb).map((name) => `## reference/${name}.md\n\n${getReferenceDoc(name as ReferenceId)}`);
+      return text([help, ...refTexts].join("\n\n---\n\n"));
     },
   );
 
@@ -242,10 +188,7 @@ export function createServer(): McpServer {
         cwd: z.string().optional().describe("Project root directory. Defaults to the MCP server's working directory."),
       },
     },
-    async ({ cwd }) => {
-      const ctx = loadProjectContext(cwd ?? process.cwd());
-      return { content: [{ type: "text", text: formatProjectContext(ctx) }] };
-    },
+    async ({ cwd }) => text(formatProjectContext(loadProjectContext(cwd ?? process.cwd()))),
   );
 
   server.registerTool(
@@ -259,7 +202,7 @@ export function createServer(): McpServer {
         from: z.string().optional().describe("Deterministic seed key (hashed to a seed)."),
       },
     },
-    async ({ id, from }) => ({ content: [{ type: "text", text: await getPaletteSeed({ id, from }) }] }),
+    async ({ id, from }) => text(await getPaletteSeed({ id, from })),
   );
 
   server.registerTool(
@@ -275,9 +218,7 @@ export function createServer(): McpServer {
     },
     async ({ target, cwd }) => {
       const findings = await detectAntipatterns(target, { cwd: cwd ?? process.cwd() });
-      const json = JSON.stringify(findings, null, 2);
-      const summary = formatDetectionResults(findings);
-      return { content: [{ type: "text", text: `${summary}\n\n\`\`\`json\n${json}\n\`\`\`` }] };
+      return text(`${formatDetectionResults(findings)}\n\n\`\`\`json\n${JSON.stringify(findings, null, 2)}\n\`\`\``);
     },
   );
 
@@ -285,8 +226,7 @@ export function createServer(): McpServer {
     "review_and_gate",
     {
       title: "Review and ship gate (call before declaring UI work done)",
-      description:
-        "Composite gate: runs detect_antipatterns, computes slop score (pass ≥85, 0 blocking slop), returns fix list + manual checklist. Do not claim completion on FAIL.",
+      description: `Composite gate: runs detect_antipatterns, computes slop score (pass ${gateRequirementText()}), returns fix list + manual checklist. Do not claim completion on FAIL.`,
       inputSchema: {
         target: z.string().min(1).describe("File or directory to scan (relative to cwd or absolute)."),
         cwd: z.string().optional().describe("Project root. Defaults to process.cwd()."),
@@ -296,12 +236,8 @@ export function createServer(): McpServer {
           .describe("Include a short avoid-ai-slop excerpt in the response."),
       },
     },
-    async ({ target, cwd, includeChecklistExcerpt }) => {
-      const result = await reviewAndGate(target, { cwd: cwd ?? process.cwd() });
-      return {
-        content: [{ type: "text", text: formatGateResult(result, includeChecklistExcerpt === true) }],
-      };
-    },
+    async ({ target, cwd, includeChecklistExcerpt }) =>
+      text(formatGateResult(await reviewAndGate(target, { cwd: cwd ?? process.cwd() }), includeChecklistExcerpt === true)),
   );
 
   // ---- Prompt --------------------------------------------------------------
@@ -318,9 +254,8 @@ export function createServer(): McpServer {
     },
     ({ task, aesthetic }) => {
       const reads = new Set<ReferenceId>(dispatchIntent(task).recommendedReads);
-      reads.add("design-principles");
-      reads.add("avoid-ai-slop");
-      reads.add("differentiation-playbook");
+      const promptExtras: ReferenceId[] = ["design-principles", "differentiation-playbook"];
+      for (const r of [...ALWAYS_READS, ...promptExtras]) reads.add(r);
       const context = [
         getPreflightBrief(),
         getSkillRouter(),

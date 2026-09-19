@@ -1,4 +1,5 @@
 // Compact preflight brief (~400–600 tokens) injected before any UI work.
+import { gateRequirementText } from "./gate.js";
 
 export function getPreflightBrief(): string {
   return `# designer-skill preflight brief
@@ -72,7 +73,7 @@ Who uses this, where, under what light, in what mood. Must force light vs dark a
 
 ## 10. Ship gate
 
-Before declaring done: \`review_and_gate\` on changed files. Score ≥85, zero blocking slop findings. Manual pass: category-reflex, completeness (no \`// rest of code\`), a11y (focus rings, 4.5:1 text, 44px touch targets, reduced-motion).
+Before declaring done: \`review_and_gate\` on changed files. Pass: ${gateRequirementText()}. Manual pass: category-reflex, completeness (no \`// rest of code\`), a11y (focus rings, 4.5:1 text, 44px touch targets, reduced-motion).
 
 ## 11. Deep references (on demand only)
 
