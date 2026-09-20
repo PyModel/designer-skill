@@ -30,6 +30,23 @@ function originAllowed(req: Request, host: string): boolean {
 const jsonRpcError = (res: Response, status: number, code: number, message: string) =>
   res.status(status).json({ jsonrpc: "2.0", error: { code, message }, id: null });
 
+// Simple in-memory rate limiter to bound per-client request volume and guard
+// against resource exhaustion from a flood of requests (CWE-770).
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 120;
+const requestCounts = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimited(key: string): boolean {
+  const now = Date.now();
+  const entry = requestCounts.get(key);
+  if (!entry || now >= entry.resetAt) {
+    requestCounts.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RATE_LIMIT_MAX_REQUESTS;
+}
+
 export async function runHttp({ port, host }: HttpOptions): Promise<void> {
   const app = express();
   app.use(express.json({ limit: "8mb" }));
@@ -37,6 +54,10 @@ export async function runHttp({ port, host }: HttpOptions): Promise<void> {
   app.post("/mcp", async (req: Request, res: Response) => {
     if (!originAllowed(req, host)) {
       jsonRpcError(res, 403, -32000, "Forbidden origin (DNS-rebinding protection).");
+      return;
+    }
+    if (rateLimited(req.ip ?? "unknown")) {
+      jsonRpcError(res, 429, -32000, "Too many requests.");
       return;
     }
     try {
