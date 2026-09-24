@@ -20,10 +20,11 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run build && npm test && node scripts/smoke-tarball.mjs",
+    "smoke": "npm run build && node scripts/smoke-tarball.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "keywords": [
     "mcp",
@@ -47,16 +48,14 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "css-select": "^6.0.0",
     "css-tree": "^3.2.1",
-    "domutils": "^3.2.2",
     "express": "^5.2.1",
     "htmlparser2": "^10.1.0",
-    "update-notifier": "^7.3.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^26.0.1",
-    "@types/update-notifier": "^6.0.8",
+    "@types/node": "^22.20.4",
+    "ajv": "^8.20.0",
     "tsx": "^4.22.4",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"

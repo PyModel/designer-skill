@@ -15,11 +15,12 @@ import {
   hasChroma,
   isNeutralColor,
   parseGradientColors,
+  parseCssColor,
   parseRgb,
   relativeLuminance,
 } from '../shared/color.mjs';
+import { stripElementBlocks, stripTags } from '../shared/text.mjs';
 
-const DETECTOR_IS_BROWSER = typeof window !== 'undefined';
 
 // ─── Section 3: Pure Detection ──────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ function checkColors(opts) {
         // local bg. Real low-contrast bugs use alpha=1 and have a
         // resolvable opaque ancestor; semi-transparent Tailwind tokens
         // like `text-paper/60` on `bg-ink` sections are the FP pattern.
-        const isAlphaFallbackFP = !DETECTOR_IS_BROWSER && !effectiveBg && (textColor.a != null && textColor.a < 1);
+        const isAlphaFallbackFP = !effectiveBg && (textColor.a != null && textColor.a < 1);
         if (!isAlphaFallbackFP) {
           findings.push({ id: 'low-contrast', snippet: `${ratio.toFixed(1)}:1 (need ${threshold}:1) — text ${colorToHex(textColor)} on ${colorToHex(bgs[worstIdx])}` });
         }
@@ -439,6 +440,23 @@ function checkGlow(opts) {
   return [];
 }
 
+// `img…:hover { transform: scale|rotate|… }` in one linear pass over rule blocks.
+function hasImgHoverTransformRule(css) {
+  const transform = /\btransform\s*:\s*(?:scale|rotate|translate|matrix|skew)/i;
+  for (const chunk of css.split('}')) {
+    const brace = chunk.lastIndexOf('{');
+    if (brace === -1) continue;
+    const selector = chunk.slice(Math.max(chunk.lastIndexOf(';', brace), chunk.lastIndexOf('>', brace), 0), brace);
+    const body = chunk.slice(brace + 1);
+    if (!transform.test(body)) continue;
+    for (const item of selector.split(',')) {
+      const img = item.search(/\bimg\b/i);
+      if (img !== -1 && /:hover\b/i.test(item.slice(img))) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Regex-on-HTML checks shared between browser and Node page-level detection.
  * These don't need DOM access, just the raw HTML string.
@@ -451,7 +469,7 @@ function checkHtmlPatterns(html) {
   // AI color palette: purple/violet
   const purpleHexRe = /#(?:7c3aed|8b5cf6|a855f7|9333ea|7e22ce|6d28d9|6366f1|764ba2|667eea)\b/gi;
   if (purpleHexRe.test(html)) {
-    const purpleTextRe = /(?:(?:^|;)\s*color\s*:\s*(?:.*?)(?:#(?:7c3aed|8b5cf6|a855f7|9333ea|7e22ce|6d28d9))|gradient.*?#(?:7c3aed|8b5cf6|a855f7|764ba2|667eea))/gi;
+    const purpleTextRe = /(?:(?:^|;)\s*color\s*:\s*[^;{}\n]{0,200}?#(?:7c3aed|8b5cf6|a855f7|9333ea|7e22ce|6d28d9)|gradient[^;{}\n]{0,300}?#(?:7c3aed|8b5cf6|a855f7|764ba2|667eea))/gi;
     if (purpleTextRe.test(html)) {
       findings.push({ id: 'ai-color-palette', snippet: 'Purple/violet accent colors detected' });
     }
@@ -577,10 +595,7 @@ function checkHtmlPatterns(html) {
   // Lives here (regex-on-HTML) rather than in the text-content analyzers so it
   // runs in the bundled browser path too, not just the CLI/static path.
   {
-    const bodyText = html
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ');
+    const bodyText = stripTags(stripElementBlocks(stripElementBlocks(html, 'script'), 'style'));
     const tm = /\b(\w+)\s+theater\b/i.exec(bodyText);
     if (tm) findings.push({ id: 'theater-slop-phrase', snippet: `"${tm[0].trim()}"` });
   }
@@ -589,8 +604,7 @@ function checkHtmlPatterns(html) {
   // A CSS `img...:hover { transform: ... }` rule, or a Tailwind hover:scale /
   // hover:rotate / hover:translate utility on an <img>. Each distinct
   // mechanism is its own finding.
-  const imgHoverCss = /\bimg\b[^,{}]*:hover\b[^{}]*\{[^}]*\btransform\s*:\s*(?:scale|rotate|translate|matrix|skew)/i;
-  if (imgHoverCss.test(html)) {
+  if (hasImgHoverTransformRule(html)) {
     findings.push({ id: 'image-hover-transform', snippet: 'img:hover { transform } rule' });
   }
   const imgTagRe = /<img\b[^>]*\bclass\s*=\s*"([^"]*)"/gi;
@@ -606,91 +620,61 @@ function checkHtmlPatterns(html) {
 
 // ─── Section 4: resolveBackground (unified) ─────────────────────────────────
 
-// Read the element's own background color, computed-style first, with a
-// jsdom-friendly fallback that parses the inline `background:` shorthand
-// from the raw style attribute. jsdom (~v29) does not decompose the
-// shorthand into `backgroundColor`, so without this fallback the CLI silently
-// returns null for any element styled via `background: rgb(...)` or
-// `background: #abc`. Real browsers always decompose, so the fallback is
-// a no-op there.
+// Styles come from the static cascade (css-cascade.mjs), which resolves var()
+// and normalizes every parseable color to rgb()/rgba(). A color the cascade
+// could not evaluate is listed in `style.__unevaluable` and must surface as a
+// coverage gap, never as "transparent" or "white".
+const CANVAS_COLOR = Object.freeze({ r: 255, g: 255, b: 255, a: 1 });
+
 function readOwnBackgroundColor(el, computedStyle) {
-  const bg = parseRgb(computedStyle.backgroundColor);
-  if (DETECTOR_IS_BROWSER || (bg && bg.a >= 0.1)) return bg;
-  const rawStyle = el.getAttribute?.('style') || '';
-  const bgMatch = rawStyle.match(/background(?:-color)?\s*:\s*([^;]+)/i);
-  const inlineBg = bgMatch ? bgMatch[1].trim() : '';
-  if (!inlineBg) return bg;
-  if (/gradient/i.test(inlineBg) || /url\s*\(/i.test(inlineBg)) return bg;
-  const fromRgb = parseRgb(inlineBg);
-  if (fromRgb) return fromRgb;
-  const hexMatch = inlineBg.match(/#([0-9a-f]{6}|[0-9a-f]{3})\b/i);
-  if (hexMatch) {
-    const h = hexMatch[1];
-    if (h.length === 6) {
-      return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: 1 };
-    }
-    return { r: parseInt(h[0] + h[0], 16), g: parseInt(h[1] + h[1], 16), b: parseInt(h[2] + h[2], 16), a: 1 };
-  }
-  return bg;
+  return parseRgb(computedStyle.backgroundColor);
 }
 
-function resolveBackground(el, win, customPropMap) {
+function blendOver(top, base) {
+  const a = top.a ?? 1;
+  return {
+    r: Math.round(top.r * a + base.r * (1 - a)),
+    g: Math.round(top.g * a + base.g * (1 - a)),
+    b: Math.round(top.b * a + base.b * (1 - a)),
+    a: 1,
+  };
+}
+
+function hasGradientOrUrlImage(style) {
+  const bgImage = style.backgroundImage || '';
+  return bgImage && bgImage !== 'none' && (/gradient/i.test(bgImage) || /url\s*\(/i.test(bgImage));
+}
+
+// Effective opaque background behind `el`: translucent layers are composited
+// over the nearest opaque ancestor (the canvas is white). Returns
+// { color } | { color: null } (gradient/image surface) | { unevaluable, value }.
+function resolveBackgroundDetailed(el, win) {
+  const layers = [];
   let current = el;
+  let base = CANVAS_COLOR;
   while (current && current.nodeType === 1) {
-    const style = DETECTOR_IS_BROWSER ? getComputedStyle(current) : win.getComputedStyle(current);
-    const bgImage = style.backgroundImage || '';
-    const hasGradientOrUrl = bgImage && bgImage !== 'none' && (/gradient/i.test(bgImage) || /url\s*\(/i.test(bgImage));
-
-    // Try the solid bg-color FIRST. If the element has both a solid color
-    // and a gradient/url overlay (a common pattern: `background: var(--paper)
-    // radial-gradient(...)` for paper-grain texture), the solid color is the
-    // dominant visible surface for contrast purposes; the overlay is
-    // decorative. The old behavior bailed on any gradient ancestor, which
-    // caused massive false-positive contrast findings on grain-textured
-    // body backgrounds.
-    let bg = parseRgb(style.backgroundColor);
-    if (!DETECTOR_IS_BROWSER && (!bg || bg.a < 0.1)) {
-      // jsdom returns literal "var(--X)" / "oklch(...)" strings. Resolve
-      // through customPropMap so Tailwind v4 color tokens become RGB.
-      if (customPropMap) {
-        bg = parseColorResolved(style.backgroundColor, customPropMap);
-      }
-      if (!bg || bg.a < 0.1) {
-        // Inline-style fallback. jsdom doesn't decompose background
-        // shorthand, so colors set via inline style are otherwise invisible.
-        const rawStyle = current.getAttribute?.('style') || '';
-        const bgMatch = rawStyle.match(/background(?:-color)?\s*:\s*([^;]+)/i);
-        const inlineBg = bgMatch ? bgMatch[1].trim() : '';
-        if (inlineBg && !/gradient/i.test(inlineBg) && !/url\s*\(/i.test(inlineBg)) {
-          bg = parseColorResolved(inlineBg, customPropMap) || parseAnyColor(inlineBg);
-        }
-      }
+    const style = win.getComputedStyle(current);
+    if (style.__unevaluable?.has('backgroundColor')) {
+      return { color: null, unevaluable: true, value: style.backgroundColor };
     }
-
-    if (bg && bg.a > 0.1) {
-      if (DETECTOR_IS_BROWSER || bg.a >= 0.5) return bg;
-    }
-    // No solid bg-color at this level. If THIS level has a gradient/url
-    // with no underlying solid color we can read:
-    //   • on body/html: assume white. Body-level gradients are almost
-    //     always decorative texture (paper grain, noise) on top of a
-    //     solid bg-color the page set via `background: var(--paper)`
-    //     shorthand — which jsdom can't decompose into bg-color. The
-    //     downstream gradient-stops fallback path produces catastrophic
-    //     false positives in this case (gradient noise stops have
-    //     accidental browns/blacks that look like card backgrounds).
-    //   • on other elements: bail to null and let the caller fall back
-    //     to gradient stops (gradient buttons / hero sections are real
-    //     bgs worth checking against).
-    if (hasGradientOrUrl) {
-      if (current.tagName === 'BODY' || current.tagName === 'HTML') {
-        return { r: 255, g: 255, b: 255, a: 1 };
-      }
-      return null;
+    const bg = parseRgb(style.backgroundColor);
+    if (bg && (bg.a ?? 1) >= 0.999) { base = bg; break; }
+    if (bg && bg.a > 0) layers.push(bg);
+    if (hasGradientOrUrlImage(style)) {
+      // Body/html gradients are decorative texture over the canvas; any other
+      // gradient/image surface has no single color (callers use its stops).
+      if (current.tagName !== 'BODY' && current.tagName !== 'HTML') return { color: null };
+      break;
     }
     current = current.parentElement;
   }
-  return { r: 255, g: 255, b: 255 };
+  let color = base;
+  for (let i = layers.length - 1; i >= 0; i--) color = blendOver(layers[i], color);
+  return { color };
+}
+
+function resolveBackground(el, win) {
+  return resolveBackgroundDetailed(el, win).color;
 }
 
 // Walk parents looking for a gradient background and return its color stops.
@@ -699,20 +683,10 @@ function resolveBackground(el, win, customPropMap) {
 function resolveGradientStops(el, win) {
   let current = el;
   while (current && current.nodeType === 1) {
-    const style = DETECTOR_IS_BROWSER ? getComputedStyle(current) : win.getComputedStyle(current);
-    const bgImage = style.backgroundImage || '';
+    const bgImage = win.getComputedStyle(current).backgroundImage || '';
     if (bgImage && bgImage !== 'none' && /gradient/i.test(bgImage)) {
       const stops = parseGradientColors(bgImage);
       if (stops.length > 0) return stops;
-    }
-    if (!DETECTOR_IS_BROWSER) {
-      // jsdom doesn't decompose `background:` shorthand — peek at the raw inline style
-      const rawStyle = current.getAttribute?.('style') || '';
-      const bgMatch = rawStyle.match(/background(?:-image)?\s*:\s*([^;]+)/i);
-      if (bgMatch && /gradient/i.test(bgMatch[1])) {
-        const stops = parseGradientColors(bgMatch[1]);
-        if (stops.length > 0) return stops;
-      }
     }
     current = current.parentElement;
   }
@@ -751,255 +725,6 @@ function resolveBorderRadiusPx(el, style, widthPx, win) {
 // ─── Section 5: Element Adapters ────────────────────────────────────────────
 
 // Browser adapters — call getComputedStyle/getBoundingClientRect on live DOM
-
-function checkElementBordersDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  if (BORDER_SAFE_TAGS.has(tag)) return [];
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 20 || rect.height < 20) return [];
-  const style = getComputedStyle(el);
-  const sides = ['Top', 'Right', 'Bottom', 'Left'];
-  const widths = {}, colors = {};
-  for (const s of sides) {
-    widths[s] = parseFloat(style[`border${s}Width`]) || 0;
-    colors[s] = style[`border${s}Color`] || '';
-  }
-  return checkBorders(tag, widths, colors, parseFloat(style.borderRadius) || 0);
-}
-
-function checkElementColorsDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  // No early SAFE_TAGS bail here — checkColors() does its own gating that
-  // includes the styled-button exception for <a> / <button> with their own
-  // opaque background. Bailing here would prevent that exception from firing.
-  const rect = el.getBoundingClientRect();
-  if (rect.width < 10 || rect.height < 10) return [];
-  const style = getComputedStyle(el);
-  const directText = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('');
-  const hasDirectText = directText.trim().length > 0;
-  const effectiveBg = resolveBackground(el);
-  return checkColors({
-    tag,
-    textColor: parseRgb(style.color),
-    bgColor: readOwnBackgroundColor(el, style),
-    effectiveBg,
-    effectiveBgStops: effectiveBg ? null : resolveGradientStops(el),
-    fontSize: parseFloat(style.fontSize) || 16,
-    fontWeight: parseInt(style.fontWeight) || 400,
-    hasDirectText,
-    isEmojiOnly: isEmojiOnlyText(directText),
-    bgClip: style.webkitBackgroundClip || style.backgroundClip || '',
-    bgImage: style.backgroundImage || '',
-    classList: el.getAttribute('class') || '',
-  });
-}
-
-function checkElementIconTileDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  if (!HEADING_TAGS.has(tag)) return [];
-  const sibling = el.previousElementSibling;
-  if (!sibling) return [];
-
-  const sibRect = sibling.getBoundingClientRect();
-  const headRect = el.getBoundingClientRect();
-  const sibStyle = getComputedStyle(sibling);
-
-  // The tile may either contain an <svg>/<i> icon child, OR the tile itself
-  // may contain an emoji/symbol character directly as its only text content
-  // (the "card-icon" pattern from many AI-generated demos).
-  const iconChild = sibling.querySelector('svg, i[data-lucide], i[class*="fa-"], i[class*="icon"]');
-  const iconRect = iconChild?.getBoundingClientRect();
-  const sibDirectText = [...sibling.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('');
-  const hasInlineEmojiIcon = sibling.children.length === 0 && isEmojiOnlyText(sibDirectText);
-
-  return checkIconTile({
-    headingTag: tag,
-    headingText: el.textContent || '',
-    headingTop: headRect.top,
-    siblingTag: sibling.tagName.toLowerCase(),
-    siblingWidth: sibRect.width,
-    siblingHeight: sibRect.height,
-    siblingBottom: sibRect.bottom,
-    siblingBgColor: parseRgb(sibStyle.backgroundColor),
-    siblingBgImage: sibStyle.backgroundImage || '',
-    siblingBorderWidth: parseFloat(sibStyle.borderTopWidth) || 0,
-    siblingBorderRadius: parseFloat(sibStyle.borderRadius) || 0,
-    hasIconChild: !!iconChild || hasInlineEmojiIcon,
-    iconChildWidth: iconRect?.width || 0,
-  });
-}
-
-function checkElementItalicSerifDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  if (tag !== 'h1' && tag !== 'h2') return [];
-  const style = getComputedStyle(el);
-  return checkItalicSerif({
-    tag,
-    fontStyle: style.fontStyle || '',
-    fontFamily: style.fontFamily || '',
-    fontSize: parseFloat(style.fontSize) || 0,
-    headingText: el.textContent || '',
-  });
-}
-
-function checkElementHeroEyebrowDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  if (tag !== 'h1') return [];
-  const sibling = el.previousElementSibling;
-  if (!sibling) return [];
-  const headStyle = getComputedStyle(el);
-  const sibStyle = getComputedStyle(sibling);
-  return checkHeroEyebrow({
-    headingTag: tag,
-    headingText: el.textContent || '',
-    headingFontSize: parseFloat(headStyle.fontSize) || 0,
-    siblingTag: sibling.tagName.toLowerCase(),
-    siblingText: sibling.textContent || '',
-    siblingTextTransform: sibStyle.textTransform || '',
-    siblingFontSize: parseFloat(sibStyle.fontSize) || 0,
-    siblingLetterSpacing: parseFloat(sibStyle.letterSpacing) || 0,
-    siblingFontWeight: sibStyle.fontWeight || '',
-    siblingColor: sibStyle.color || '',
-  });
-}
-
-// Build a map of CSS custom properties declared on :root / :host / html.
-// Used to resolve var(--X) refs that jsdom returns verbatim in
-// getComputedStyle. Tailwind v4 routes every utility class through
-// CSS vars (font-weight: var(--font-weight-bold), font-size:
-// var(--text-xs), letter-spacing: var(--tracking-widest)), so without
-// resolution every style-based check silently fails on Tailwind v4
-// builds — the values come back as literal "var(--font-weight-bold)"
-// strings and parseFloat returns NaN.
-function buildCustomPropMap(document) {
-  const map = new Map();
-  let sheets;
-  try { sheets = Array.from(document.styleSheets || []); }
-  catch { return map; }
-  for (const sheet of sheets) {
-    let rules;
-    try { rules = Array.from(sheet.cssRules || []); }
-    catch { continue; }
-    for (const rule of rules) {
-      // Style rules only (type 1). Walk @media / @supports if present.
-      if (rule.type === 4 /* MEDIA_RULE */ || rule.type === 12 /* SUPPORTS_RULE */) {
-        try { rules.push(...Array.from(rule.cssRules || [])); } catch { /* ignore */ }
-        continue;
-      }
-      if (rule.type !== 1 /* STYLE_RULE */) continue;
-      const sel = rule.selectorText || '';
-      if (!/(^|,\s*)(:root|html|:host)\b/i.test(sel)) continue;
-      const style = rule.style;
-      if (!style) continue;
-      for (let i = 0; i < style.length; i++) {
-        const prop = style[i];
-        if (!prop || !prop.startsWith('--')) continue;
-        const val = style.getPropertyValue(prop).trim();
-        if (val) map.set(prop, val);
-      }
-    }
-  }
-  return map;
-}
-
-// Resolve var(--X[, fallback]) refs in a computed-style value string.
-// Recurses up to 8 levels for chained refs (--a: var(--b)). Returns
-// the original string when no refs are present or the chain doesn't
-// resolve. Safe to call on already-resolved values.
-function resolveVarRefs(raw, customPropMap, depth = 0) {
-  if (typeof raw !== 'string' || !raw.includes('var(')) return raw;
-  if (depth > 8) return raw;
-  return raw.replace(/var\(\s*(--[a-zA-Z0-9_-]+)\s*(?:,\s*([^)]+))?\)/g, (_m, name, fallback) => {
-    const v = customPropMap.get(name);
-    if (v != null) return resolveVarRefs(v, customPropMap, depth + 1);
-    return fallback ? resolveVarRefs(fallback.trim(), customPropMap, depth + 1) : _m;
-  });
-}
-
-// OKLCH → sRGB conversion (Björn Ottosson's matrices). L in 0..1 (or %),
-// C in 0..~0.4 typical, H in degrees. Returns clamped {r,g,b,a:1} in 0..255.
-// Needed because jsdom doesn't compute oklch() values — getComputedStyle
-// returns the literal "oklch(...)" string. Without this, the entire
-// Tailwind v4 color palette (which is OKLCH-based) is invisible to the
-// detector's contrast / color checks.
-function oklchToRgb(L, C, H) {
-  const hRad = (H * Math.PI) / 180;
-  const a = C * Math.cos(hRad);
-  const b = C * Math.sin(hRad);
-  const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
-  const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
-  const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
-  const lc = l_ * l_ * l_, mc = m_ * m_ * m_, sc = s_ * s_ * s_;
-  const rLin =  4.0767416621 * lc - 3.3077115913 * mc + 0.2309699292 * sc;
-  const gLin = -1.2684380046 * lc + 2.6097574011 * mc - 0.3413193965 * sc;
-  const bLin = -0.0041960863 * lc - 0.7034186147 * mc + 1.7076147010 * sc;
-  const enc = (x) => {
-    const c = Math.max(0, Math.min(1, x));
-    return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-  };
-  return {
-    r: Math.round(enc(rLin) * 255),
-    g: Math.round(enc(gLin) * 255),
-    b: Math.round(enc(bLin) * 255),
-    a: 1,
-  };
-}
-
-// Extended color parser: rgb/rgba/hex/oklch. Returns null on no match.
-// Use this when the input might be any CSS color form; use plain parseRgb
-// when you only expect computed rgb() values from real browsers.
-function parseAnyColor(s) {
-  if (!s || typeof s !== 'string') return null;
-  const str = s.trim();
-  if (str === 'transparent' || str === 'currentcolor' || str === 'inherit') return null;
-  let m;
-  m = str.match(/rgba?\(\s*(\d+(?:\.\d+)?)\s*,?\s*(\d+(?:\.\d+)?)\s*,?\s*(\d+(?:\.\d+)?)(?:\s*[,/]\s*([\d.]+))?\s*\)/);
-  if (m) return { r: Math.round(+m[1]), g: Math.round(+m[2]), b: Math.round(+m[3]), a: m[4] !== undefined ? +m[4] : 1 };
-  m = str.match(/^#([0-9a-f]{3,8})$/i);
-  if (m) {
-    const h = m[1];
-    if (h.length === 3 || h.length === 4) {
-      return {
-        r: parseInt(h[0] + h[0], 16),
-        g: parseInt(h[1] + h[1], 16),
-        b: parseInt(h[2] + h[2], 16),
-        a: h.length === 4 ? parseInt(h[3] + h[3], 16) / 255 : 1,
-      };
-    }
-    if (h.length === 6 || h.length === 8) {
-      return {
-        r: parseInt(h.slice(0, 2), 16),
-        g: parseInt(h.slice(2, 4), 16),
-        b: parseInt(h.slice(4, 6), 16),
-        a: h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1,
-      };
-    }
-  }
-  // OKLCH parser. Tailwind v4's CSS minifier squishes the space after
-  // `%` ("21.5%.02 50"), so the separator between L and C may be absent.
-  // Match L (with optional %), then C and H separated permissively.
-  m = str.match(/oklch\(\s*([\d.]+)(%?)\s*[\s,]*\s*([\d.]+)\s*[\s,]+\s*([-\d.]+)(?:deg)?(?:\s*\/\s*([\d.]+)(%)?)?\s*\)/i);
-  if (m) {
-    const Lnum = parseFloat(m[1]);
-    const L = m[2] === '%' ? Lnum / 100 : Lnum;
-    const rgb = oklchToRgb(L, parseFloat(m[3]), parseFloat(m[4]));
-    if (m[5] !== undefined) {
-      const alpha = parseFloat(m[5]);
-      rgb.a = m[6] === '%' ? alpha / 100 : alpha;
-    }
-    return rgb;
-  }
-  return null;
-}
-
-// Resolve var() refs in a color string (via customPropMap), then parse.
-// Returns null on any failure. Used in jsdom-mode paths where
-// getComputedStyle returns literal "var(--X)" or "oklch(...)" strings.
-function parseColorResolved(str, customPropMap) {
-  if (!str) return null;
-  const resolved = customPropMap ? resolveVarRefs(str, customPropMap) : str;
-  return parseAnyColor(resolved);
-}
 
 const REPEATED_KICKER_SKIP_SELECTOR = [
   'nav',
@@ -1110,114 +835,6 @@ function collectRepeatedSectionKickerCandidates(doc, getStyle, resolveLetterSpac
   return candidates;
 }
 
-function checkRepeatedSectionKickersDOM() {
-  const candidates = collectRepeatedSectionKickerCandidates(
-    document,
-    (el) => getComputedStyle(el),
-    (value, fontSize) => resolveLengthPx(value, fontSize) || 0,
-  );
-  return checkRepeatedSectionKickers({ candidates });
-}
-
-function checkElementMotionDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  if (SAFE_TAGS.has(tag)) return [];
-  const style = getComputedStyle(el);
-  return checkMotion({
-    tag,
-    transitionProperty: style.transitionProperty || '',
-    animationName: style.animationName || '',
-    timingFunctions: [style.animationTimingFunction, style.transitionTimingFunction].filter(Boolean).join(' '),
-    classList: el.getAttribute('class') || '',
-  });
-}
-
-function checkElementGlowDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  const style = getComputedStyle(el);
-  if (!style.boxShadow || style.boxShadow === 'none') return [];
-  // Use parent's background — glow radiates outward, so the surrounding context matters
-  // If resolveBackground returns null (gradient), try to infer from the gradient colors
-  let parentBg = el.parentElement ? resolveBackground(el.parentElement) : resolveBackground(el);
-  if (!parentBg) {
-    // Gradient background — sample its colors to determine if it's dark
-    let cur = el.parentElement;
-    while (cur && cur.nodeType === 1) {
-      const bgImage = getComputedStyle(cur).backgroundImage || '';
-      const gradColors = parseGradientColors(bgImage);
-      if (gradColors.length > 0) {
-        // Average the gradient colors
-        const avg = { r: 0, g: 0, b: 0 };
-        for (const c of gradColors) { avg.r += c.r; avg.g += c.g; avg.b += c.b; }
-        avg.r = Math.round(avg.r / gradColors.length);
-        avg.g = Math.round(avg.g / gradColors.length);
-        avg.b = Math.round(avg.b / gradColors.length);
-        parentBg = avg;
-        break;
-      }
-      cur = cur.parentElement;
-    }
-  }
-  return checkGlow({ tag, boxShadow: style.boxShadow, effectiveBg: parentBg });
-}
-
-function checkElementAIPaletteDOM(el) {
-  const style = getComputedStyle(el);
-  const findings = [];
-
-  // Check gradient backgrounds for purple/violet or cyan
-  const bgImage = style.backgroundImage || '';
-  const gradColors = parseGradientColors(bgImage);
-  for (const c of gradColors) {
-    if (hasChroma(c, 50)) {
-      const hue = getHue(c);
-      if (hue >= 260 && hue <= 310) {
-        findings.push({ id: 'ai-color-palette', snippet: 'Purple/violet gradient background' });
-        break;
-      }
-      if (hue >= 160 && hue <= 200) {
-        findings.push({ id: 'ai-color-palette', snippet: 'Cyan gradient background' });
-        break;
-      }
-    }
-  }
-
-  // Check for neon text (vivid cyan/purple color on dark background)
-  const textColor = parseRgb(style.color);
-  if (textColor && hasChroma(textColor, 80)) {
-    const hue = getHue(textColor);
-    const isAIPalette = (hue >= 160 && hue <= 200) || (hue >= 260 && hue <= 310);
-    if (isAIPalette) {
-      const parentBg = el.parentElement ? resolveBackground(el.parentElement) : null;
-      // Also check gradient parents
-      let effectiveBg = parentBg;
-      if (!effectiveBg) {
-        let cur = el.parentElement;
-        while (cur && cur.nodeType === 1) {
-          const gi = getComputedStyle(cur).backgroundImage || '';
-          const gc = parseGradientColors(gi);
-          if (gc.length > 0) {
-            const avg = { r: 0, g: 0, b: 0 };
-            for (const c of gc) { avg.r += c.r; avg.g += c.g; avg.b += c.b; }
-            avg.r = Math.round(avg.r / gc.length);
-            avg.g = Math.round(avg.g / gc.length);
-            avg.b = Math.round(avg.b / gc.length);
-            effectiveBg = avg;
-            break;
-          }
-          cur = cur.parentElement;
-        }
-      }
-      if (effectiveBg && relativeLuminance(effectiveBg) < 0.1) {
-        const label = hue >= 260 ? 'Purple/violet' : 'Cyan';
-        findings.push({ id: 'ai-color-palette', snippet: `${label} neon text on dark background` });
-      }
-    }
-  }
-
-  return findings;
-}
-
 const QUALITY_TEXT_TAGS = new Set(['p', 'li', 'td', 'th', 'dd', 'blockquote', 'figcaption']);
 
 // Resolve a CSS font-size value to pixels by walking up the parent chain.
@@ -1265,14 +882,14 @@ function cssColorIsTransparent(value) {
   if (!value) return true;
   const str = String(value).trim().toLowerCase();
   if (!str || str === 'transparent' || str === 'rgba(0, 0, 0, 0)') return true;
-  const parsed = parseAnyColor(str);
+  const parsed = parseCssColor(str);
   if (parsed) return (parsed.a ?? 1) <= 0.05;
   return /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0(?:\.0+)?\s*\)$/.test(str);
 }
 
 function colorsNearlyMatch(a, b) {
-  const ca = parseAnyColor(a);
-  const cb = parseAnyColor(b);
+  const ca = parseCssColor(a);
+  const cb = parseCssColor(b);
   if (!ca || !cb) return false;
   const alphaDelta = Math.abs((ca.a ?? 1) - (cb.a ?? 1));
   const channelDelta = Math.max(
@@ -1657,22 +1274,6 @@ function checkQuality(opts) {
   return findings;
 }
 
-function checkElementQualityDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  const style = getComputedStyle(el);
-  const hasDirectText = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 10);
-  const textLen = el.textContent?.trim().length || 0;
-  // Browser getComputedStyle resolves everything to px — direct parseFloat
-  // works.
-  const fontSize = parseFloat(style.fontSize) || 16;
-  const lineHeightPx = resolveLengthPx(style.lineHeight, fontSize);
-  const letterSpacingPx = resolveLengthPx(style.letterSpacing, fontSize);
-  const rect = el.getBoundingClientRect();
-  const lineMax = (typeof window !== 'undefined' && window.__DESIGNER_SKILL_CONFIG__?.lineLengthMax) || 80;
-  const viewportWidth = (typeof window !== 'undefined' ? window.innerWidth : 0) || 0;
-  return checkQuality({ el, tag, style, hasDirectText, textLen, fontSize, lineHeightPx, letterSpacingPx, rect, lineMax, viewportWidth, win: typeof window !== 'undefined' ? window : null });
-}
-
 // Pure page-level skipped-heading walk. Takes a Document so it works in both
 // the browser and jsdom.
 function checkPageQualityFromDoc(doc) {
@@ -1693,11 +1294,6 @@ function checkPageQualityFromDoc(doc) {
     prevText = text;
   }
   return findings;
-}
-
-// Browser adapter (returns the legacy { type, detail } shape used by the overlay loop)
-function checkPageQualityDOM() {
-  return checkPageQualityFromDoc(document).map(f => ({ type: f.id, detail: f.snippet }));
 }
 
 // Node adapters — take pre-extracted jsdom computed style
@@ -1745,50 +1341,27 @@ function checkElementBorders(tag, style, overrides, resolvedRadius) {
   return checkBorders(tag, widths, colors, radius);
 }
 
-function checkElementColors(el, style, tag, window, customPropMap, hasAnchorInheritRule) {
+function checkElementColors(el, style, tag, window) {
   const directText = [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent).join('');
   const hasDirectText = directText.trim().length > 0;
-
-  const effectiveBg = resolveBackground(el, window, customPropMap);
-  // jsdom returns literal "var(--X)" / "oklch(...)" for color, so plain
-  // parseRgb misses Tailwind-tokenized text colors. Resolve through the
-  // customPropMap first; fall back to parseRgb for vanilla rgb() pages.
-  let textColor = customPropMap ? parseColorResolved(style.color, customPropMap) : null;
-  if (!textColor) textColor = parseRgb(style.color);
-
-  // Anchor-inherit FP workaround: jsdom's UA stylesheet has `:link { color:
-  // blue }` at high specificity. The page's `a { color: inherit }` rule
-  // (Tailwind v4 preflight) loses to jsdom even though it WINS in real
-  // browsers (Chrome's UA wraps :link in :where() — zero specificity).
-  // When the page declares the inherit rule AND we see jsdom's default
-  // link blue on an anchor, walk to the nearest non-anchor ancestor and
-  // use its color instead.
-  if (
-    hasAnchorInheritRule &&
-    textColor &&
-    textColor.r === 0 && textColor.g === 0 && textColor.b === 238 &&
-    (tag === 'a' || el.closest?.('a'))
-  ) {
-    let cur = el.parentElement;
-    while (cur && cur.tagName !== 'HTML') {
-      if (cur.tagName !== 'A') {
-        const ps = window.getComputedStyle(cur);
-        const inh = (customPropMap ? parseColorResolved(ps.color, customPropMap) : null) || parseRgb(ps.color);
-        if (inh && !(inh.r === 0 && inh.g === 0 && inh.b === 238)) {
-          textColor = inh;
-          break;
-        }
-      }
-      cur = cur.parentElement;
-    }
+  const background = resolveBackgroundDetailed(el, window);
+  const textUnevaluable = !!style.__unevaluable?.has('color');
+  if (hasDirectText && (textUnevaluable || background.unevaluable)) {
+    window.reportGap?.({
+      rule: 'low-contrast',
+      kind: 'UNEVALUABLE_COLOR',
+      detail: textUnevaluable ? `color: ${style.color}` : `background-color: ${background.value}`,
+      element: el,
+    });
   }
-
+  const unevaluable = textUnevaluable || background.unevaluable;
+  const effectiveBg = unevaluable ? null : background.color;
   return checkColors({
     tag,
-    textColor,
+    textColor: textUnevaluable ? null : parseRgb(style.color),
     bgColor: readOwnBackgroundColor(el, style),
     effectiveBg,
-    effectiveBgStops: effectiveBg ? null : resolveGradientStops(el, window),
+    effectiveBgStops: effectiveBg || unevaluable ? null : resolveGradientStops(el, window),
     fontSize: parseFloat(style.fontSize) || 16,
     fontWeight: parseInt(style.fontWeight) || 400,
     hasDirectText,
@@ -1847,7 +1420,7 @@ function checkElementItalicSerif(el, style, tag) {
   });
 }
 
-function checkElementHeroEyebrow(el, style, tag, window, customPropMap) {
+function checkElementHeroEyebrow(el, style, tag, window) {
   if (tag !== 'h1') return [];
   const sibling = el.previousElementSibling;
   if (!sibling) return [];
@@ -1855,11 +1428,11 @@ function checkElementHeroEyebrow(el, style, tag, window, customPropMap) {
   // Resolve Tailwind v4 CSS-variable wrappers (font-weight:var(--font-weight-bold)
   // etc.) before parsing. jsdom returns these verbatim from getComputedStyle;
   // without resolution every style-based gate fails silently on Tailwind v4 builds.
-  const fontSizeRaw = customPropMap ? resolveVarRefs(sibStyle.fontSize, customPropMap) : sibStyle.fontSize;
-  const fontWeightRaw = customPropMap ? resolveVarRefs(sibStyle.fontWeight, customPropMap) : sibStyle.fontWeight;
-  const letterSpacingRaw = customPropMap ? resolveVarRefs(sibStyle.letterSpacing, customPropMap) : sibStyle.letterSpacing;
-  const colorRaw = customPropMap ? resolveVarRefs(sibStyle.color, customPropMap) : sibStyle.color;
-  const headingFontSizeRaw = customPropMap ? resolveVarRefs(style.fontSize, customPropMap) : style.fontSize;
+  const fontSizeRaw = sibStyle.fontSize;
+  const fontWeightRaw = sibStyle.fontWeight;
+  const letterSpacingRaw = sibStyle.letterSpacing;
+  const colorRaw = sibStyle.color;
+  const headingFontSizeRaw = style.fontSize;
   const siblingFontSize = parseFloat(fontSizeRaw) || 0;
   // resolveLengthPx returns null for 'normal' / 'auto'; coerce to 0 so the
   // gate falls through cleanly. jsdom returns letter-spacing verbatim
@@ -1906,188 +1479,7 @@ function checkElementGlow(tag, style, effectiveBg) {
 
 // Browser page-level checks — use document/getComputedStyle globals
 
-function checkTypography() {
-  const findings = [];
-
-  // Walk actual text-bearing elements and tally font usage by *computed style*.
-  // This is much more accurate than scanning CSS rules — it ignores rules that
-  // exist in the stylesheet but apply to nothing (e.g. demo classes showing
-  // anti-patterns), and counts what the user actually sees.
-  const fontUsage = new Map(); // primary font name → count of elements
-  let totalTextElements = 0;
-  for (const el of document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th, dd, blockquote, figcaption, a, button, label, span')) {
-    // Skip designer-skill's own elements
-    if (el.closest && el.closest('.designer-skill-overlay, .designer-skill-label, .designer-skill-banner, .designer-skill-tooltip')) continue;
-    // Only count elements that actually have visible direct text
-    const hasText = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 0);
-    if (!hasText) continue;
-    const style = getComputedStyle(el);
-    const ff = style.fontFamily;
-    if (!ff) continue;
-    const stack = ff.split(',').map(f => f.trim().replace(/^['"]|['"]$/g, '').toLowerCase());
-    const primary = stack.find(f => f && !GENERIC_FONTS.has(f));
-    if (!primary) continue;
-    fontUsage.set(primary, (fontUsage.get(primary) || 0) + 1);
-    totalTextElements++;
-  }
-
-  if (totalTextElements >= 20) {
-    // A font is "primary" if it's used by at least 15% of text elements
-    const PRIMARY_THRESHOLD = 0.15;
-    for (const [font, count] of fontUsage) {
-      const share = count / totalTextElements;
-      if (share < PRIMARY_THRESHOLD) continue;
-      if (!OVERUSED_FONTS.has(font)) continue;
-      if (isBrandFontOnOwnDomain(font)) continue;
-      findings.push({ type: 'overused-font', detail: `Primary font: ${font} (${Math.round(share * 100)}% of text)` });
-    }
-
-    // Single-font check: only one distinct primary font across all text
-    if (fontUsage.size === 1) {
-      const only = [...fontUsage.keys()][0];
-      findings.push({ type: 'single-font', detail: `only font used is ${only}` });
-    }
-  }
-
-  const sizes = new Set();
-  for (const el of document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,a,li,td,th,label,button,div')) {
-    const fs = parseFloat(getComputedStyle(el).fontSize);
-    if (fs > 0 && fs < 200) sizes.add(Math.round(fs * 10) / 10);
-  }
-  if (sizes.size >= 3) {
-    const sorted = [...sizes].sort((a, b) => a - b);
-    const ratio = sorted[sorted.length - 1] / sorted[0];
-    if (ratio < 2.0) {
-      findings.push({ type: 'flat-type-hierarchy', detail: `Sizes: ${sorted.map(s => s + 'px').join(', ')} (ratio ${ratio.toFixed(1)}:1)` });
-    }
-  }
-
-  return findings;
-}
-
-function isCardLikeDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  if (SAFE_TAGS.has(tag) || ['input','select','textarea','img','video','canvas','picture'].includes(tag)) return false;
-  const style = getComputedStyle(el);
-  const cls = el.getAttribute('class') || '';
-  const hasShadow = (style.boxShadow && style.boxShadow !== 'none') || /\bshadow(?:-sm|-md|-lg|-xl|-2xl)?\b/.test(cls);
-  const hasBorder = /\bborder\b/.test(cls);
-  const hasRadius = parseFloat(style.borderRadius) > 0 || /\brounded(?:-sm|-md|-lg|-xl|-2xl|-full)?\b/.test(cls);
-  const hasBg = (style.backgroundColor && style.backgroundColor !== 'rgba(0, 0, 0, 0)') || /\bbg-(?:white|gray-\d+|slate-\d+)\b/.test(cls);
-  return isCardLikeFromProps(hasShadow, hasBorder, hasRadius, hasBg);
-}
-
-function checkLayout() {
-  const findings = [];
-  const flaggedEls = new Set();
-
-  for (const el of document.querySelectorAll('*')) {
-    if (!isCardLikeDOM(el) || flaggedEls.has(el)) continue;
-    const cls = el.getAttribute('class') || '';
-    const style = getComputedStyle(el);
-    if (style.position === 'absolute' || style.position === 'fixed') continue;
-    if (/\b(?:dropdown|popover|tooltip|menu|modal|dialog)\b/i.test(cls)) continue;
-    if ((el.textContent?.trim().length || 0) < 10) continue;
-    const rect = el.getBoundingClientRect();
-    if (rect.width < 50 || rect.height < 30) continue;
-
-    let parent = el.parentElement;
-    while (parent) {
-      if (isCardLikeDOM(parent)) { flaggedEls.add(el); break; }
-      parent = parent.parentElement;
-    }
-  }
-
-  for (const el of flaggedEls) {
-    let isAncestor = false;
-    for (const other of flaggedEls) {
-      if (other !== el && el.contains(other)) { isAncestor = true; break; }
-    }
-    if (!isAncestor) findings.push({ type: 'nested-cards', detail: 'Card inside card', el });
-  }
-
-  return findings;
-}
-
 // Node page-level checks — take document/window as parameters
-
-function checkPageTypography(doc, win) {
-  const findings = [];
-
-  const fonts = new Set();
-  const overusedFound = new Set();
-
-  for (const sheet of doc.styleSheets) {
-    let rules;
-    try { rules = sheet.cssRules || sheet.rules; } catch { continue; }
-    if (!rules) continue;
-    for (const rule of rules) {
-      if (rule.type !== 1) continue;
-      const ff = rule.style?.fontFamily;
-      if (!ff) continue;
-      const stack = ff.split(',').map(f => f.trim().replace(/^['"]|['"]$/g, '').toLowerCase());
-      const primary = stack.find(f => f && !GENERIC_FONTS.has(f));
-      if (primary) {
-        fonts.add(primary);
-        if (OVERUSED_FONTS.has(primary)) overusedFound.add(primary);
-      }
-    }
-  }
-
-  // Check Google Fonts links in HTML
-  const html = doc.documentElement?.outerHTML || '';
-  const gfRe = /fonts\.googleapis\.com\/css2?\?family=([^&"'\s]+)/gi;
-  let m;
-  while ((m = gfRe.exec(html)) !== null) {
-    const families = m[1].split('|').map(f => f.split(':')[0].replace(/\+/g, ' ').toLowerCase());
-    for (const f of families) {
-      fonts.add(f);
-      if (OVERUSED_FONTS.has(f)) overusedFound.add(f);
-    }
-  }
-
-  // Also parse raw HTML/style content for font-family (jsdom may not expose all via CSSOM)
-  const ffRe = /font-family\s*:\s*([^;}]+)/gi;
-  let fm;
-  while ((fm = ffRe.exec(html)) !== null) {
-    for (const f of fm[1].split(',').map(f => f.trim().replace(/^['"]|['"]$/g, '').toLowerCase())) {
-      if (f && !GENERIC_FONTS.has(f)) {
-        fonts.add(f);
-        if (OVERUSED_FONTS.has(f)) overusedFound.add(f);
-      }
-    }
-  }
-
-  for (const font of overusedFound) {
-    findings.push({ id: 'overused-font', snippet: `Primary font: ${font}` });
-  }
-
-  // Single font
-  if (fonts.size === 1) {
-    const els = doc.querySelectorAll('*');
-    if (els.length >= 20) {
-      findings.push({ id: 'single-font', snippet: `only font used is ${[...fonts][0]}` });
-    }
-  }
-
-  // Flat type hierarchy
-  const sizes = new Set();
-  const textEls = doc.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span, a, li, td, th, label, button, div');
-  for (const el of textEls) {
-    const fontSize = parseFloat(win.getComputedStyle(el).fontSize);
-    // Filter out sub-8px values (jsdom doesn't resolve relative units properly)
-    if (fontSize >= 8 && fontSize < 200) sizes.add(Math.round(fontSize * 10) / 10);
-  }
-  if (sizes.size >= 3) {
-    const sorted = [...sizes].sort((a, b) => a - b);
-    const ratio = sorted[sorted.length - 1] / sorted[0];
-    if (ratio < 2.0) {
-      findings.push({ id: 'flat-type-hierarchy', snippet: `Sizes: ${sorted.map(s => s + 'px').join(', ')} (ratio ${ratio.toFixed(1)}:1)` });
-    }
-  }
-
-  return findings;
-}
 
 function isCardLike(el, win) {
   const tag = el.tagName.toLowerCase();
@@ -2185,10 +1577,10 @@ function creamFromClassList(cls) {
   if (!cls) return null;
   // Arbitrary value: bg-[#f5f0e6] / bg-[rgb(245_240_230)] (underscores = spaces).
   const arb = cls.match(/\bbg-\[([^\]]+)\]/);
-  if (arb && isCreamColor(parseAnyColor(arb[1].replace(/_/g, ' ')))) return `bg-[${arb[1]}]`;
+  if (arb && isCreamColor(parseCssColor(arb[1].replace(/_/g, ' ')))) return `bg-[${arb[1]}]`;
   // Named warm-light utilities.
   for (const [tok, hex] of Object.entries(TAILWIND_BG_HEX)) {
-    if (new RegExp(`(^|\\s)${tok}($|\\s)`).test(cls) && isCreamColor(parseAnyColor(hex))) return tok;
+    if (new RegExp(`(^|\\s)${tok}($|\\s)`).test(cls) && isCreamColor(parseCssColor(hex))) return tok;
   }
   return null;
 }
@@ -2257,19 +1649,7 @@ function checkElementOversizedH1(el, style, tag, window) {
   return checkOversizedH1({ tag, fontSize, headingText });
 }
 
-function checkElementOversizedH1DOM(el) {
-  const tag = el.tagName.toLowerCase();
-  if (tag !== 'h1') return [];
-  const style = getComputedStyle(el);
-  const fontSize = parseFloat(style.fontSize) || 0;
-  const headingText = (el.textContent || '').trim().replace(/\s+/g, ' ');
-  const rect = el.getBoundingClientRect();
-  const viewportWidth = (typeof window !== 'undefined' ? window.innerWidth : 0) || 0;
-  const viewportHeight = (typeof window !== 'undefined' ? window.innerHeight : 0) || 0;
-  return checkOversizedH1({ tag, fontSize, headingText, rect, viewportWidth, viewportHeight });
-}
-
-// ─── GPT tell: hairline border + wide diffuse shadow (gated --gpt) ────────────
+// ─── GPT tell: hairline border + wide diffuse shadow (provider-gated: gpt) ────────────
 const CSS_COLOR_TOKEN_RE = /(?:rgba?|hsla?|oklch|oklab|lab|lch|color)\([^)]*\)|#[0-9a-fA-F]{3,8}\b|\b(?:black|white|transparent|currentcolor)\b/gi;
 
 function shadowLayerAlpha(layer) {
@@ -2277,7 +1657,7 @@ function shadowLayerAlpha(layer) {
   const match = CSS_COLOR_TOKEN_RE.exec(layer);
   if (!match) return 1;
   if (match[0].toLowerCase() === 'transparent') return 0;
-  const parsed = parseAnyColor(match[0]);
+  const parsed = parseCssColor(match[0]);
   return parsed ? (parsed.a ?? 1) : 1;
 }
 
@@ -2300,7 +1680,7 @@ function shadowMaxBlurPx(boxShadow, { minAlpha = 0 } = {}) {
 
 function cssColorAlpha(value) {
   if (cssColorIsTransparent(value)) return 0;
-  const parsed = parseAnyColor(value);
+  const parsed = parseCssColor(value);
   return parsed ? (parsed.a ?? 1) : 1;
 }
 
@@ -2335,11 +1715,6 @@ function borderColorsFromStyle(style) {
 }
 
 function checkElementGptBorderShadow(el, style) {
-  return checkGptThinBorderWideShadow({ borderWidths: borderWidthsFromStyle(style), borderColors: borderColorsFromStyle(style), boxShadow: style.boxShadow || '' });
-}
-
-function checkElementGptBorderShadowDOM(el) {
-  const style = getComputedStyle(el);
   return checkGptThinBorderWideShadow({ borderWidths: borderWidthsFromStyle(style), borderColors: borderColorsFromStyle(style), boxShadow: style.boxShadow || '' });
 }
 
@@ -2488,115 +1863,6 @@ function checkElementClippedOverflow(el, style, tag, window) {
   return checkClippedOverflow(el, style, (n) => window.getComputedStyle(n));
 }
 
-function checkElementClippedOverflowDOM(el) {
-  const style = getComputedStyle(el);
-  return checkClippedOverflow(el, style, (n) => getComputedStyle(n));
-}
-
-// ─── Text overflow (browser-only: needs scrollWidth/clientWidth) ──────────────
-const TEXT_OVERFLOW_SKIP_TAGS = new Set(['pre', 'code', 'textarea', 'svg', 'canvas', 'select', 'option', 'marquee']);
-
-function metricLengthPx(value, fontSizePx = 16) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value !== 'string') return null;
-  return resolveLengthPx(value, fontSizePx);
-}
-
-function firstMetricLengthPx(fontSizePx, ...values) {
-  for (const value of values) {
-    const parsed = metricLengthPx(value, fontSizePx);
-    if (parsed !== null) return parsed;
-  }
-  return null;
-}
-
-function expandBoxShorthand(parts) {
-  if (parts.length === 1) return [parts[0], parts[0], parts[0], parts[0]];
-  if (parts.length === 2) return [parts[0], parts[1], parts[0], parts[1]];
-  if (parts.length === 3) return [parts[0], parts[1], parts[2], parts[1]];
-  return [parts[0], parts[1], parts[2], parts[3]];
-}
-
-function clippedByInset(clipPath) {
-  const match = String(clipPath || '').trim().toLowerCase().match(/^inset\s*\(([^)]*)\)$/);
-  if (!match) return false;
-  const beforeRound = match[1].split(/\s+round\s+/)[0].trim();
-  if (!beforeRound) return false;
-  const values = expandBoxShorthand(beforeRound.split(/\s+/).slice(0, 4));
-  const percents = values.map(value => String(value).trim().match(/^(-?\d+(?:\.\d+)?)%$/));
-  if (percents.some(match => !match)) return false;
-  const [top, right, bottom, left] = percents.map(match => parseFloat(match[1]));
-  return top + bottom >= 100 || left + right >= 100;
-}
-
-function clippedByRect(clip) {
-  const match = String(clip || '').trim().toLowerCase().match(/^rect\s*\(([^)]*)\)$/);
-  if (!match) return false;
-  const values = match[1].split(/[,\s]+/).map(value => value.trim()).filter(Boolean);
-  if (values.length !== 4) return false;
-  const [top, right, bottom, left] = values.map(value => metricLengthPx(value, 16));
-  if ([top, right, bottom, left].some(value => value === null)) return false;
-  return bottom <= top || right <= left;
-}
-
-function isScreenReaderOnlyTextStyle(style, metrics = {}) {
-  if (!style) return false;
-  const overflowValues = [style.overflow, style.overflowX, style.overflowY]
-    .map(value => String(value || '').toLowerCase());
-  const clipsOverflow = overflowValues.some(value => value === 'hidden' || value === 'clip');
-
-  const fontSize = metricLengthPx(style.fontSize, 16) || 16;
-  const width = firstMetricLengthPx(fontSize, metrics.width, metrics.clientWidth, style.width, style.inlineSize);
-  const height = firstMetricLengthPx(fontSize, metrics.height, metrics.clientHeight, style.height, style.blockSize);
-  const isTiny = width !== null && height !== null && width <= 2 && height <= 2;
-  const isAbsolutelyHidden = String(style.position || '').toLowerCase() === 'absolute' && isTiny && clipsOverflow;
-
-  const clipPath = String(style.clipPath || style.webkitClipPath || '').trim();
-  const clip = String(style.clip || '').trim();
-  return isAbsolutelyHidden || clippedByInset(clipPath) || clippedByRect(clip);
-}
-
-function isRenderedForBrowserRule(el) {
-  for (let cur = el; cur && cur.nodeType === 1; cur = cur.parentElement) {
-    if (cur.getAttribute?.('aria-hidden') === 'true') return false;
-    const style = getComputedStyle(cur);
-    const visibility = String(style.visibility || '').toLowerCase();
-    if (style.display === 'none' || visibility === 'hidden' || visibility === 'collapse') return false;
-    if ((parseFloat(style.opacity) || 0) <= 0.01) return false;
-    if (String(style.contentVisibility || '').toLowerCase() === 'hidden') return false;
-  }
-  return true;
-}
-
-function checkElementTextOverflowDOM(el) {
-  const tag = el.tagName.toLowerCase();
-  if (TEXT_OVERFLOW_SKIP_TAGS.has(tag)) return [];
-  if (!isRenderedForBrowserRule(el)) return [];
-  // Only the element that actually owns overflowing text — not its ancestors,
-  // which inherit a wider scrollWidth from the spilling descendant.
-  const hasDirectText = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 0);
-  if (!hasDirectText) return [];
-  const style = getComputedStyle(el);
-  const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
-  if (isScreenReaderOnlyTextStyle(style, {
-    width: rect?.width,
-    height: rect?.height,
-    clientWidth: el.clientWidth,
-    clientHeight: el.clientHeight,
-  })) return [];
-  const isScrollRegion = (s) => /(auto|scroll)/.test(s.overflowX || '') || /(auto|scroll)/.test(s.overflow || '');
-  if (isScrollRegion(style)) return [];
-  // A scrollable ancestor means this overflow is intentional and scrollable.
-  for (let p = el.parentElement; p; p = p.parentElement) {
-    if (isScrollRegion(getComputedStyle(p))) return [];
-  }
-  const delta = el.scrollWidth - el.clientWidth;
-  if (el.clientWidth > 0 && delta >= 16) {
-    return [{ id: 'text-overflow', snippet: `${classSelector(el)} overflows its box by ${Math.round(delta)}px` }];
-  }
-  return [];
-}
-
 export {
   checkBorders,
   isEmojiOnlyText,
@@ -2613,32 +1879,17 @@ export {
   checkHtmlPatterns,
   readOwnBackgroundColor,
   resolveBackground,
+  resolveBackgroundDetailed,
   resolveGradientStops,
   parseRadiusToPx,
   resolveBorderRadiusPx,
-  checkElementBordersDOM,
-  checkElementColorsDOM,
-  checkElementIconTileDOM,
-  checkElementItalicSerifDOM,
-  checkElementHeroEyebrowDOM,
-  buildCustomPropMap,
-  resolveVarRefs,
-  oklchToRgb,
-  parseAnyColor,
-  parseColorResolved,
   cleanInlineText,
   isRepeatedKickerCandidate,
   collectRepeatedSectionKickerCandidates,
-  checkRepeatedSectionKickersDOM,
-  checkElementMotionDOM,
-  checkElementGlowDOM,
-  checkElementAIPaletteDOM,
   resolveFontSizePx,
   resolveLengthPx,
   checkQuality,
-  checkElementQualityDOM,
   checkPageQualityFromDoc,
-  checkPageQualityDOM,
   checkElementQuality,
   checkElementBorders,
   checkElementColors,
@@ -2648,24 +1899,15 @@ export {
   checkRepeatedSectionKickersFromDoc,
   checkElementMotion,
   checkElementGlow,
-  checkTypography,
-  isCardLikeDOM,
-  checkLayout,
-  checkPageTypography,
   isCardLike,
   checkPageLayout,
   isCreamColor,
   checkCreamPalette,
   checkOversizedH1,
   checkElementOversizedH1,
-  checkElementOversizedH1DOM,
   shadowMaxBlurPx,
   checkGptThinBorderWideShadow,
   checkElementGptBorderShadow,
-  checkElementGptBorderShadowDOM,
   checkClippedOverflow,
   checkElementClippedOverflow,
-  checkElementClippedOverflowDOM,
-  isScreenReaderOnlyTextStyle,
-  checkElementTextOverflowDOM,
 };

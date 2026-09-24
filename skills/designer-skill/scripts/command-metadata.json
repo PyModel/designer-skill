@@ -39,14 +39,14 @@
     "argumentHint": "[area]",
     "aliases": ["audit"],
     "cues": ["check", "audit", "review the", "review my", "a11y", "accessibility", "performance review", "responsive check", "lighthouse"],
-    "reads": ["engineering-and-performance", "refactor-and-redesign", "css-techniques"]
+    "reads": ["engineering-and-performance", "refactor-and-redesign", "css-techniques", "ux/03-accessibility"]
   },
   "review": {
     "description": "Review visual hierarchy, clarity and brand fidelity without edits.",
     "argumentHint": "[area]",
     "aliases": ["critique", "score"],
     "cues": ["review", "critique", "is this good", "design review", "feels ai", "looks ai", "feedback on", "visual critique", "score the design", "rate the design"],
-    "reads": ["visual-critique", "design-principles", "avoid-ai-slop"]
+    "reads": ["visual-critique", "design-principles", "avoid-ai-slop", "ux/01-core-principles"]
   },
   "finish": {
     "description": "Polish alignment, spacing and applicable interaction states.",
@@ -88,7 +88,7 @@
     "argumentHint": "[target] [context]",
     "aliases": ["adapt"],
     "cues": ["responsive", "adapt", "mobile", "tablet", "different device", "breakpoint", "small screen", "touch"],
-    "reads": ["engineering-and-performance", "refactor-and-redesign", "css-techniques"]
+    "reads": ["engineering-and-performance", "refactor-and-redesign", "css-techniques", "ux/08-mobile-ux"]
   },
   "simplify": {
     "description": "Reduce unnecessary complexity without removing required behavior.",
@@ -102,35 +102,35 @@
     "argumentHint": "[target]",
     "aliases": ["clarify"],
     "cues": ["copy", "clarify", "microcopy", "ux copy", "ux writing", "rewrite this error", "error message", "button label", "labels are confusing", "wording"],
-    "reads": ["interaction-design", "avoid-ai-slop"]
+    "reads": ["interaction-design", "avoid-ai-slop", "ux/09-ux-writing"]
   },
   "onboard": {
     "description": "Design first-run and empty-state paths to useful outcomes.",
     "argumentHint": "[target]",
     "aliases": [],
     "cues": ["onboard", "onboarding", "first run", "first-run", "first-time", "product tour", "activation", "getting started", "welcome screen", "empty states"],
-    "reads": ["interaction-design", "engineering-and-performance"]
+    "reads": ["interaction-design", "engineering-and-performance", "ux/16-onboarding"]
   },
   "ship": {
     "description": "Verify edge cases, recovery, real data and internationalization.",
     "argumentHint": "[target]",
     "aliases": ["harden"],
     "cues": ["ship", "harden", "production-ready", "production ready", "edge case", "real data", "empty state", "error state", "i18n", "loading state", "rtl"],
-    "reads": ["engineering-and-performance", "css-techniques"]
+    "reads": ["engineering-and-performance", "css-techniques", "ux/03-accessibility"]
   },
   "speed": {
     "description": "Measure and repair actual UI performance bottlenecks.",
     "argumentHint": "[target]",
     "aliases": ["optimize"],
     "cues": ["speed", "optimize", "optimise", "slow", "janky", "jank", "lag", "fps", "bundle size", "performance issue", "core web vitals"],
-    "reads": ["engineering-and-performance", "css-techniques"]
+    "reads": ["engineering-and-performance", "css-techniques", "ux/22-performance-ux"]
   },
   "tokens": {
     "description": "Extract reusable semantic tokens when repetition justifies them.",
     "argumentHint": "[target]",
     "aliases": ["extract"],
     "cues": ["tokens", "extract", "reusable", "design system", "componentize", "dedupe", "shared component"],
-    "reads": ["design-systems", "engineering-and-performance"]
+    "reads": ["design-systems", "engineering-and-performance", "ux/11-design-systems"]
   },
   "brand": {
     "description": "Develop an authorized identity grounded in the product brief.",
@@ -179,42 +179,42 @@
     "argumentHint": "[target]",
     "aliases": [],
     "cues": ["delight", "personality", "memorable", "charm", "easter egg", "playful", "fun touch"],
-    "reads": ["motion-and-interaction", "interaction-design"]
+    "reads": ["motion-and-interaction", "interaction-design", "ux/20-emotional-design"]
   },
   "form": {
     "description": "Design form labels, validation, recovery and submission behavior.",
     "argumentHint": "[target]",
     "aliases": [],
     "cues": ["form", "forms", "form design", "input fields", "form validation", "multi-step form", "form layout", "checkout form", "sign up form"],
-    "reads": ["interaction-design", "engineering-and-performance"]
+    "reads": ["interaction-design", "engineering-and-performance", "ux/07-forms-and-inputs"]
   },
   "nav": {
     "description": "Choose navigation consistent with product information architecture.",
     "argumentHint": "[target]",
     "aliases": ["navigate"],
     "cues": ["nav", "navigation", "nav menu", "sidebar nav", "tab bar", "breadcrumb", "menu structure", "top nav", "bottom nav"],
-    "reads": ["interaction-design", "design-principles"]
+    "reads": ["interaction-design", "design-principles", "ux/05-information-architecture"]
   },
   "states": {
     "description": "Specify applicable UI states and transitions without impossible combinations.",
     "argumentHint": "[target]",
     "aliases": [],
     "cues": ["state machine", "ui states", "all states", "impossible state", "model behavior", "define all states", "every state"],
-    "reads": ["interaction-design", "engineering-and-performance"]
+    "reads": ["interaction-design", "engineering-and-performance", "ux/06-interaction-design"]
   },
   "tone": {
     "description": "Refine product voice and feedback without changing its meaning.",
     "argumentHint": "[target]",
     "aliases": ["feel"],
     "cues": ["tone", "feel", "feels flat", "feels lifeless", "no personality", "feels cold", "humanize", "feels robotic", "too sterile"],
-    "reads": ["interaction-design", "motion-and-interaction"]
+    "reads": ["interaction-design", "motion-and-interaction", "ux/20-emotional-design"]
   },
   "system": {
     "description": "Evolve tokens, components and themes with compatibility checks.",
     "argumentHint": "[target]",
     "aliases": [],
     "cues": ["design system", "token system", "naming convention", "theming", "design tokens", "dark mode system", "component library", "token architecture"],
-    "reads": ["design-systems", "engineering-and-performance"]
+    "reads": ["design-systems", "engineering-and-performance", "ux/11-design-systems"]
   },
   "css": {
     "description": "Apply supported CSS patterns and fix stylesheet defects.",

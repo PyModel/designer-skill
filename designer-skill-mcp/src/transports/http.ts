@@ -1,46 +1,61 @@
 // Streamable HTTP transport, stateless: a fresh server + transport per request
-// (no session store). Binds 127.0.0.1 by default with an Origin guard against
-// DNS-rebinding; use --host 0.0.0.0 to expose (put your own auth in front).
-import express, { type Request, type Response } from "express";
+// (no session store). Built on the SDK's createMcpExpressApp, which validates
+// the Host header against localhost names when bound to a loopback address
+// (DNS-rebinding protection) and caps JSON bodies. Any other bind address
+// requires a bearer token and at least one --root.
+import { createHash, timingSafeEqual } from "node:crypto";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { NextFunction, Request, Response } from "express";
+import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "../server.js";
+import { projectRoot } from "../scope.js";
+
+export const LOOPBACK_HOSTS: readonly string[] = ["127.0.0.1", "localhost", "::1"];
 
 export interface HttpOptions {
   port: number;
   host: string;
-}
-
-function isLoopback(host: string): boolean {
-  return host === "127.0.0.1" || host === "localhost" || host === "::1";
-}
-
-// DNS-rebinding guard: when bound to loopback, reject cross-origin browser
-// requests (a non-local Origin header). Non-browser clients send no Origin.
-function originAllowed(req: Request, host: string): boolean {
-  if (!isLoopback(host)) return true; // public bind: operator owns auth/proxy
-  const origin = req.headers.origin;
-  if (!origin) return true;
-  try {
-    return isLoopback(new URL(origin).hostname);
-  } catch {
-    return false;
-  }
+  roots: string[];
+  allowedHosts: string[];
+  token?: string;
 }
 
 const jsonRpcError = (res: Response, status: number, code: number, message: string) =>
   res.status(status).json({ jsonrpc: "2.0", error: { code, message }, id: null });
 
-export async function runHttp({ port, host }: HttpOptions): Promise<void> {
-  const app = express();
-  app.use(express.json({ limit: "8mb" }));
+// Fixed-length digests, so the comparison time reveals neither content nor length.
+const digest = (value: string) => createHash("sha256").update(value).digest();
 
-  app.post("/mcp", async (req: Request, res: Response) => {
-    if (!originAllowed(req, host)) {
-      jsonRpcError(res, 403, -32000, "Forbidden origin (DNS-rebinding protection).");
+function bearerAuth(token: string) {
+  const expected = digest(token);
+  return (req: Request, res: Response, next: NextFunction) => {
+    const header = req.headers.authorization ?? "";
+    if (!timingSafeEqual(digest(header.startsWith("Bearer ") ? header.slice(7) : ""), expected)) {
+      jsonRpcError(res, 401, -32001, "Unauthorized.");
       return;
     }
+    next();
+  };
+}
+
+export function assertHttpExposure({ host, roots, token }: Pick<HttpOptions, "host" | "roots" | "token">): void {
+  if (LOOPBACK_HOSTS.includes(host)) return;
+  if (!token) throw new Error(`Binding ${host} exposes the server beyond this machine: set DESIGNER_SKILL_HTTP_TOKEN (clients send it as a Bearer token).`);
+  if (!roots.length) throw new Error(`Binding ${host} requires at least one --root to limit which project directories clients can read.`);
+}
+
+export async function runHttp(options: HttpOptions): Promise<Server> {
+  assertHttpExposure(options);
+  // Resolve once: a bad --root stops startup instead of failing every request.
+  const roots = options.roots.map((root) => projectRoot(root));
+  const app = createMcpExpressApp({ host: options.host, ...(options.allowedHosts.length ? { allowedHosts: options.allowedHosts } : {}) });
+  if (options.token) app.use(bearerAuth(options.token));
+
+  app.post("/mcp", async (req: Request, res: Response) => {
     try {
-      const server = createServer();
+      const server = createServer({ allowedRoots: roots });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => {
         void transport.close();
@@ -60,6 +75,12 @@ export async function runHttp({ port, host }: HttpOptions): Promise<void> {
   app.get("/mcp", notAllowed);
   app.delete("/mcp", notAllowed);
 
-  await new Promise<void>((resolve) => app.listen(port, host, () => resolve()));
-  console.error(`designer-skill-mcp: HTTP transport on http://${host}:${port}/mcp`);
+  const listener = await new Promise<Server>((resolve, reject) => {
+    const server = app.listen(options.port, options.host, (error?: Error) => (error ? reject(error) : resolve(server)));
+    server.on("error", reject);
+  });
+  const { port } = listener.address() as AddressInfo;
+  const shown = options.host.includes(":") ? `[${options.host}]` : options.host;
+  console.error(`designer-skill-mcp: HTTP transport on http://${shown}:${port}/mcp`);
+  return listener;
 }

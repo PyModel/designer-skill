@@ -4,14 +4,8 @@
 # devtools API), shell scripts for build tooling, and test stubs with fake
 # API key strings — none of these are actual security issues for the
 # designer-skill Codex plugin itself.
-#
-# skills/designer-skill/scripts/context.mjs and designer-skill-paths.mjs use
-# fs.readFileSync/writeFileSync to load PRODUCT.md / DESIGN.md from the
-# project root — expected, bounded context loading, not data exfiltration.
 ignore_paths = [
   "main-s/*",
   "docs/blog/*",
   "docs/superpowers/*",
-  "skills/designer-skill/scripts/context.mjs",
-  "skills/designer-skill/scripts/lib/designer-skill-paths.mjs",
 ]

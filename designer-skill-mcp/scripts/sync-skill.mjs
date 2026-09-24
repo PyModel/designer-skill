@@ -15,9 +15,16 @@ const MODULES = [
   { src: resolve(pkgRoot, '..', 'skills', 'ux-designer'), dest: 'ux-designer', subdirs: ['references'] },
 ];
 
+// npm drops these from a tarball even when `files` whitelists their directory,
+// so a manifest listing one would fail every install-time hash check.
+const NPM_IGNORED = /^(?:\..*|node_modules|package-lock\.json|npm-debug\.log|npm-shrinkwrap\.json|.*\.orig|CVS|config\.gypi)$/;
+
 function hashDirectory(root, dir, files) {
-  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
     const path = join(dir, entry.name);
+    if (NPM_IGNORED.test(entry.name)) {
+      throw new Error(`${relative(root, path)}: npm never packs this name; rename or remove it from the canonical skill source.`);
+    }
     if (entry.isDirectory()) hashDirectory(root, path, files);
     else if (entry.isFile()) {
       const rel = relative(root, path).split('\\').join('/');

@@ -1,19 +1,27 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { pathToFileURL } from "node:url";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createServer, SERVER_INSTRUCTIONS } from "../src/server.js";
+import { createServer, SERVER_INSTRUCTIONS, type ServerOptions } from "../src/server.js";
 import { dispatchIntent } from "../src/dispatch.js";
 import { REFERENCE_NAMES } from "../src/skill.js";
 const cleanup: Array<() => unknown> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
-async function connect() {
-  const server = createServer(); const client = new Client({ name: "test-client", version: "0.0.0" });
+async function connect(options: ServerOptions = {}, clientRoots?: string[]) {
+  const server = createServer(options);
+  const client = new Client({ name: "test-client", version: "0.0.0" }, clientRoots ? { capabilities: { roots: {} } } : {});
+  if (clientRoots) {
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots: clientRoots.map((r) => ({ uri: pathToFileURL(r).href })) }));
+  }
   cleanup.push(() => server.close(), () => client.close());
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  // The client validates structuredContent only against output schemas it has listed.
+  await client.listTools();
   return client;
 }
 function workspace() {
@@ -89,7 +97,42 @@ describe("MCP contract", () => {
   it("reports empty scan failure as structured evidence", async () => {
     const result = await (await connect()).callTool({ name: "review_and_gate", arguments: { cwd: workspace(), target: "." } });
     expect(result.isError).not.toBe(true);
-    expect(result.structuredContent).toMatchObject({ schemaVersion: 2, code: "NO_SCAN_COVERAGE", staticStatus: "FAIL", status: "FAIL" });
+    expect(result.structuredContent).toMatchObject({ schemaVersion: 3, code: "NO_SCAN_COVERAGE", staticStatus: "FAIL", status: "FAIL" });
+  });
+  it("reports findings with positive line numbers and structured errors with codes", async () => {
+    const cwd = workspace();
+    writeFileSync(join(cwd, "index.html"), '<!doctype html><html><body>\n<img src="missing.png" alt="x">\n<p style="color:#777;background:#888">Low</p>\n</body></html>\n');
+    const client = await connect();
+    const scan = await client.callTool({ name: "detect_antipatterns", arguments: { cwd, target: "." } });
+    expect(scan.isError).not.toBe(true);
+    const findings = (scan.structuredContent as { findings: Array<{ antipattern: string; line?: number }> }).findings;
+    expect(findings.map((f) => f.antipattern)).toEqual(expect.arrayContaining(["low-contrast"]));
+    for (const f of findings) if (f.line !== undefined) expect(f.line).toBeGreaterThanOrEqual(1);
+    const bad = await client.callTool({ name: "detect_antipatterns", arguments: { cwd, target: "nope.html" } });
+    expect(bad.isError).toBe(true);
+    expect(JSON.parse(textOf(bad))).toMatchObject({ code: "INPUT_INVALID" });
+  });
+  it("confines cwd to --root", async () => {
+    const allowed = workspace(), other = workspace();
+    const client = await connect({ allowedRoots: [allowed] });
+    expect((await client.callTool({ name: "review_and_gate", arguments: { cwd: allowed, target: "." } })).isError).not.toBe(true);
+    const denied = await client.callTool({ name: "review_and_gate", arguments: { cwd: other, target: "." } });
+    expect(denied.isError).toBe(true);
+    expect(JSON.parse(textOf(denied))).toMatchObject({ code: "SCOPE_VIOLATION" });
+  });
+  it("confines cwd to the client's MCP roots when no --root is given", async () => {
+    const allowed = workspace(), other = workspace();
+    const client = await connect({ useClientRoots: true }, [allowed]);
+    expect((await client.callTool({ name: "load_project_context", arguments: { cwd: allowed } })).isError).not.toBe(true);
+    const denied = await client.callTool({ name: "load_project_context", arguments: { cwd: other } });
+    expect(JSON.parse(textOf(denied))).toMatchObject({ code: "SCOPE_VIOLATION" });
+  });
+  it("returns a structured error for an unknown palette seed and keeps serving", async () => {
+    const client = await connect();
+    const result = await client.callTool({ name: "get_palette_seed", arguments: { id: "no-such-seed" } });
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(textOf(result))).toMatchObject({ code: "UNKNOWN_SEED" });
+    expect((await client.listTools()).tools.length).toBeGreaterThan(0);
   });
   it("validates preservation without requiring an invented aesthetic", async () => {
     const result = await (await connect()).callTool({ name: "commit_design_direction", arguments: {
@@ -126,8 +169,10 @@ describe("ux-designer and niblet catalogue integration", () => {
     expect(textOf(result).length).toBeGreaterThan(100);
   });
   it("lists ux references as resources", async () => {
-    const uris = (await (await connect()).listResources()).resources.map((r) => r.uri);
+    const client = await connect();
+    const uris = (await client.listResources()).resources.map((r) => r.uri);
     expect(uris).toContain("designer://reference/ux/01-core-principles");
+    for (const uri of uris) expect((await client.readResource({ uri })).contents[0].text).toBeTruthy();
   });
   it("degrades niblet catalogue calls to setup guidance without NIBLET_TOKEN", async () => {
     const client = await connect();

@@ -1,16 +1,18 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
-import { getSkillRouter, getReferenceDoc, isReferenceName, REFERENCE_NAMES, REFERENCE_DESCRIPTIONS, UX_REFERENCE_NAMES, UX_REFERENCE_DESCRIPTIONS, ALL_REFERENCE_NAMES, type ReferenceId } from "./skill.js";
+import { fileURLToPath } from "node:url";
+import { getSkillRouter, getReferenceDoc, isReferenceName, REFERENCE_DESCRIPTIONS, UX_REFERENCE_DESCRIPTIONS, ALL_REFERENCE_NAMES, type ReferenceId } from "./skill.js";
 import { dispatchIntent } from "./dispatch.js";
 import { listCommands, formatCommandHelp, getCommandReads } from "./commands.js";
 import { loadProjectContext, formatProjectContext } from "./context.js";
 import { scanAntipatterns, formatDetectionResults } from "./detect.js";
 import { getPaletteSeed } from "./palette.js";
 import { getPreflightBrief } from "./brief.js";
-import { commitDesignDirection, formatDesignDirectionResult } from "./direction.js";
+import { commitDesignDirection, directionInputShape, formatDesignDirectionResult } from "./direction.js";
 import { reviewAndGate, formatGateResult } from "./gate.js";
-import { DesignError } from "./scope.js";
+import { DesignError, isWithin, projectRoot } from "./scope.js";
 import { pkg } from "./pkg.js";
 import { findUiReferences, getDesignReference } from "./niblet.js";
 
@@ -20,50 +22,99 @@ export const SERVER_INSTRUCTIONS = [
   "For UI tasks, call get_preflight_brief then load_project_context with the actual project root.",
   "Preserve identity and user scope. Audit/plan requests do not authorize implementation edits.",
   "Use dispatch_intent and load relevant references only. commit_design_direction validates new direction inputs, not taste or external writes.",
-  "review_and_gate reports static coverage, not overall readiness. Never invent verification or treat NOT_VERIFIED as PASS.",
+  "review_and_gate reports static coverage per required rule, not overall readiness. Never invent verification or treat NOT_VERIFIED or INCOMPLETE as PASS.",
 ].join("\n");
+
+export interface ServerOptions {
+  /** Explicit project roots (--root). When set, every cwd must resolve inside one of them. */
+  allowedRoots?: string[];
+  /** Ask the client for its MCP roots when it declares the capability (stdio). */
+  useClientRoots?: boolean;
+}
 
 const annotations = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const allReferenceDescriptions: Record<ReferenceId, string> = { ...REFERENCE_DESCRIPTIONS, ...UX_REFERENCE_DESCRIPTIONS };
-const cwdSchema = z.string().trim().min(1).max(4096).refine(isAbsolute, "cwd must be an absolute authorized project directory");
+const cwdSchema = z.string().trim().min(1).max(4096).refine(isAbsolute, "cwd must be an absolute project directory");
 const targetSchema = z.string().trim().min(1).max(4096);
 const text = (value: string) => ({ content: [{ type: "text" as const, text: value }] });
+
 function failure(error: unknown) {
   return { isError: true, ...text(JSON.stringify({
     code: error instanceof DesignError ? error.code : "OPERATION_FAILED",
     message: error instanceof Error ? error.message : "Operation failed.",
+    ...(error instanceof DesignError && error.details ? { details: error.details } : {}),
   })) };
 }
+
 const findingSchema = z.object({
-  file: z.string(), line: z.number().int().positive().optional(), antipattern: z.string(), snippet: z.string(),
-  description: z.string(), importedBy: z.array(z.string()).optional(),
+  file: z.string(), line: z.number().int().positive().optional(), antipattern: z.string(), name: z.string(),
+  severity: z.string(), snippet: z.string(), description: z.string(), importedBy: z.array(z.string()).optional(),
 });
+const count = z.number().int().nonnegative();
 const coverageSchema = z.object({
-  candidateFiles: z.number().int().nonnegative(), scannedFiles: z.number().int().nonnegative(),
-  ignoredFiles: z.number().int().nonnegative(), unsupportedFiles: z.number().int().nonnegative(),
-  excludedDirectories: z.number().int().nonnegative(), bytesScanned: z.number().int().nonnegative(),
+  enumeration: z.enum(["git", "filesystem"]), candidateFiles: count, scannedFiles: count, ignoredFiles: count,
+  unsupportedFiles: count, excludedDirectories: count, skippedSymlinks: count, skippedSpecialFiles: count,
+  unreadableEntries: count, skippedPaths: z.array(z.object({ path: z.string(), reason: z.enum(["symlink", "special-file", "unreadable"]) })),
+  bytesScanned: count,
 });
-const fileEvidenceSchema = z.array(z.object({ path: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/) }));
+const fileEvidenceSchema = z.array(z.object({
+  path: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/), role: z.enum(["selected", "linked-stylesheet", "design-system"]),
+}));
+const designSystemSchema = z.object({
+  status: z.enum(["absent", "no-tokens", "loaded", "invalid", "disabled"]), reason: z.string().optional(),
+});
+const gapSchema = z.object({ kind: z.string(), rule: z.string().optional(), detail: z.string().optional(), line: z.number().int().positive().optional() });
 const scanOutput = {
   target: z.string(), coverage: coverageSchema, findings: z.array(findingSchema), files: fileEvidenceSchema,
-  ignoredRules: z.array(z.string()), ignoredValues: z.number().int().nonnegative(),
+  scannedFiles: z.array(z.object({ path: z.string(), engine: z.enum(["static-html", "regex"]), fullPage: z.boolean(), gaps: z.array(gapSchema) })),
+  designSystem: designSystemSchema, ignoredRules: z.array(z.string()), waivedRules: z.array(z.string()), ignoredValues: count,
 };
+const ruleStatus = z.enum(["RAN", "WAIVED", "UNSUPPORTED", "UNRESOLVED"]);
 const gateOutput = {
-  schemaVersion: z.literal(2), status: z.enum(["FAIL", "NOT_VERIFIED"]), staticStatus: z.enum(["PASS", "FAIL"]),
+  schemaVersion: z.literal(3), status: z.enum(["FAIL", "NOT_VERIFIED"]), staticStatus: z.enum(["PASS", "FAIL", "INCOMPLETE"]),
   uiReadiness: z.enum(["FAIL", "NOT_VERIFIED"]), scope: z.literal("static"),
-  code: z.enum(["STATIC_FINDINGS", "NO_SCAN_COVERAGE", "ADDITIONAL_VERIFICATION_REQUIRED"]),
-  findingCount: z.number().int().nonnegative(), blockingCount: z.number().int().nonnegative(), warningCount: z.number().int().nonnegative(),
-  findings: z.array(findingSchema), coverage: coverageSchema, files: fileEvidenceSchema,
-  ignoredRules: z.array(z.string()), ignoredValues: z.number().int().nonnegative(),
-  checks: z.array(z.object({ id: z.string(), status: z.enum(["PASS", "FAIL", "NOT_RUN"]), producer: z.string().nullable() })),
-  fixes: z.array(z.string()), summary: z.string(),
+  code: z.enum(["NO_SCAN_COVERAGE", "STATIC_FINDINGS", "REQUIRED_RULES_UNRESOLVED", "REQUIRED_RULES_UNSUPPORTED", "REQUIRED_RULES_WAIVED", "ADDITIONAL_VERIFICATION_REQUIRED"]),
+  findingCount: count, blockingCount: count, warningCount: count,
+  findings: z.array(findingSchema),
+  ruleCoverage: z.array(z.object({
+    rule: z.string(), status: ruleStatus,
+    files: z.object({ ran: count, unsupported: count, unresolved: count }),
+    examples: z.array(z.object({ path: z.string(), status: ruleStatus, reason: z.string() })),
+  })),
+  coverage: coverageSchema, files: fileEvidenceSchema, designSystem: designSystemSchema,
+  ignoredRules: z.array(z.string()), waivedRules: z.array(z.string()), ignoredValues: count,
+  checks: z.array(z.object({
+    id: z.string(), status: z.enum(["PASS", "FAIL", "INCOMPLETE", "NOT_RUN"]), producer: z.string().nullable(), rules: z.array(z.string()).optional(),
+  })),
+  summary: z.string(),
 };
 
-export function createServer(): McpServer {
+export function createServer(options: ServerOptions = {}): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: SERVER_INSTRUCTIONS });
+  const allowedRoots = (options.allowedRoots ?? []).map((root) => projectRoot(root));
+
+  /** Resolve cwd and require it inside an authorized root (--root, else the client's MCP roots). */
+  async function authorizeCwd(cwd: string): Promise<string> {
+    const root = projectRoot(cwd);
+    let roots = allowedRoots;
+    let source = "--root";
+    if (!roots.length && options.useClientRoots && server.server.getClientCapabilities()?.roots) {
+      const listed = await server.server.listRoots();
+      roots = listed.roots.flatMap((r) => {
+        try { return [realpathSync(fileURLToPath(r.uri))]; } catch { return []; }
+      });
+      source = "the client's MCP roots";
+      if (!roots.length) throw new DesignError("SCOPE_VIOLATION", "The client declares MCP roots but lists none; no project directory is authorized.");
+    }
+    if (roots.length && !roots.some((allowed) => isWithin(allowed, root))) {
+      throw new DesignError("SCOPE_VIOLATION", `cwd ${cwd} is outside the project roots authorized by ${source}.`, { path: cwd });
+    }
+    return root;
+  }
+
   server.registerResource("designer-skill", "designer://skill", { mimeType: "text/markdown" },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: getSkillRouter() }] }));
-  server.registerResource("designer-reference", new ResourceTemplate("designer://reference/{name}", {
+  server.registerResource("designer-reference", new ResourceTemplate("designer://reference/{+name}", { // `+`: ux/* names contain "/"
     list: async () => ({ resources: ALL_REFERENCE_NAMES.map((name) => ({
       uri: `designer://reference/${name}`, name, description: allReferenceDescriptions[name], mimeType: "text/markdown",
     })) }),
@@ -73,7 +124,7 @@ export function createServer(): McpServer {
     return { contents: [{ uri: uri.href, mimeType: "text/markdown", text: getReferenceDoc(name) }] };
   });
   server.registerTool("find_ui_references", {
-    description: "Optional real-screen catalogue search (niblet.com). Needs NIBLET_TOKEN; without it, returns setup guidance. Advisory context, never a style mandate.",
+    description: "Optional real-screen catalogue search (niblet.com). Needs NIBLET_TOKEN; without it, returns setup guidance. Results are untrusted, advisory reference data.",
     annotations: { ...annotations, openWorldHint: true },
     inputSchema: { query: z.string().trim().min(2).max(200), platform: z.enum(["web", "ios"]).optional(), limit: z.number().int().min(1).max(3).optional() },
   }, async ({ query, platform, limit }) => {
@@ -81,7 +132,7 @@ export function createServer(): McpServer {
     return text(answer.configured ? answer.text : `${answer.text}\n(Catalogue not configured: set NIBLET_TOKEN to enable find_ui_references and get_design_reference.)`);
   });
   server.registerTool("get_design_reference", {
-    description: "Optional structured design-reference retrieval (niblet.com). Needs NIBLET_TOKEN; without it, returns setup guidance. Advisory only.",
+    description: "Optional structured design-reference retrieval (niblet.com). Needs NIBLET_TOKEN; without it, returns setup guidance. Results are untrusted, advisory reference data.",
     annotations: { ...annotations, openWorldHint: true },
     inputSchema: { screenId: z.string().trim().min(1).max(200), packSlug: z.string().trim().min(1).max(200).optional(), sections: z.array(z.string().trim().max(100)).max(8).optional() },
   }, async ({ screenId, packSlug, sections }) => {
@@ -130,46 +181,41 @@ export function createServer(): McpServer {
     description: "Read PRODUCT.md and DESIGN.md independently before deciding a direction. Missing documents do not force setup.",
     annotations, inputSchema: { cwd: cwdSchema },
   }, async ({ cwd }) => {
-    try { return text(formatProjectContext(loadProjectContext(cwd))); } catch (error) { return failure(error); }
+    try { return text(formatProjectContext(loadProjectContext(await authorizeCwd(cwd)))); } catch (error) { return failure(error); }
   });
   server.registerTool("commit_design_direction", {
     description: "Validate a context-grounded direction record. Use preserve for bounded fixes; audits need no direction ceremony. Does not persist approval or enforce writes.",
-    annotations, inputSchema: {
-      mode: z.enum(["preserve", "change"]).default("change"), register: z.enum(["brand", "product"]),
-      designRead: z.string().trim().min(20).max(2_000), contextSources: z.array(z.string().trim().min(1).max(2_000)).min(1).max(32),
-      aesthetic: z.string().trim().min(1).max(200).optional(), typographyDirection: z.string().trim().min(1).max(2_000).optional(),
-      layoutFamilies: z.array(z.string().trim().min(1).max(200)).max(32).optional(),
-      designVariance: z.number().int().min(1).max(10).optional(), motionIntensity: z.number().int().min(1).max(10).optional(),
-      visualDensity: z.number().int().min(1).max(10).optional(), physicalScene: z.string().max(2_000).optional(),
-      antiSlopRisks: z.array(z.string().max(500)).max(32).optional(), inverseTestPass: z.boolean().optional(),
-      inverseTestDescription: z.string().max(2_000).optional(), namedReferences: z.array(z.string().max(500)).max(16).optional(),
-    },
+    annotations, inputSchema: directionInputShape,
     outputSchema: { status: z.enum(["PASS", "FAIL"]), scope: z.literal("input-validation"), message: z.string(),
       directionId: z.string().optional(), direction: z.record(z.string(), z.unknown()).optional(), fixes: z.array(z.string()).optional() },
   }, async (input) => {
     const result = commitDesignDirection(input);
     return { ...text(formatDesignDirectionResult(result)), structuredContent: { ...result } };
   });
-  server.registerTool("get_palette_seed", { description: "Optional palette seed for authorized new identity work only.", annotations,
-    inputSchema: { id: z.string().max(200).optional(), from: z.string().max(2_000).optional() },
-  }, async ({ id, from }) => text(await getPaletteSeed({ id, from })));
+  server.registerTool("get_palette_seed", { description: "Optional palette seed for authorized new identity work only. Omit id for a weighted pick.", annotations,
+    inputSchema: { id: z.string().trim().min(1).max(200).optional(), from: z.string().max(2_000).optional() },
+  }, async ({ id, from }) => {
+    try { return text(await getPaletteSeed({ id, from })); } catch (error) { return failure(error); }
+  });
   server.registerTool("detect_antipatterns", {
-    description: "Bounded static scan with coverage, file hashes and explicit ignored inputs. Not a rendered audit.", annotations,
+    description: "Bounded static scan with coverage, per-file engine and gaps, file hashes and explicit ignored inputs. Not a rendered audit.", annotations,
     inputSchema: { target: targetSchema, cwd: cwdSchema }, outputSchema: scanOutput,
   }, async ({ target, cwd }) => {
-    try { const result = await scanAntipatterns(target, { cwd });
-      return { ...text(formatDetectionResults(result.findings)), structuredContent: { ...result } };
+    try {
+      const result = await scanAntipatterns(target, { cwd: await authorizeCwd(cwd) });
+      const header = `Scanned ${result.coverage.scannedFiles} of ${result.coverage.candidateFiles} candidate files; ${result.findings.length} findings.`;
+      return { ...text(`${header}\n${formatDetectionResults(result.findings, 20)}`), structuredContent: { ...result } };
     } catch (error) { return failure(error); }
   });
   server.registerTool("review_and_gate", {
-    description: "Static verification only. Empty scans fail; successful static checks still report overall NOT_VERIFIED. Run other required checks separately.",
+    description: "Static verification only, reported per required rule. Empty or fully waived scans fail; rules a file type cannot evaluate make the static result INCOMPLETE; a static PASS still reports overall NOT_VERIFIED.",
     annotations, inputSchema: {
       target: targetSchema, cwd: cwdSchema, blockingRules: z.array(z.string().trim().min(1).max(100)).max(64).optional(),
-      includeChecklistExcerpt: z.boolean().optional().describe("Deprecated compatibility input; no implicit reference loading."),
     }, outputSchema: gateOutput,
-  }, async ({ target, cwd, blockingRules, includeChecklistExcerpt }) => {
-    try { const result = await reviewAndGate(target, { cwd, blockingRules });
-      return { ...text(formatGateResult(result, includeChecklistExcerpt)), structuredContent: { ...result } };
+  }, async ({ target, cwd, blockingRules }) => {
+    try {
+      const result = await reviewAndGate(target, { cwd: await authorizeCwd(cwd), blockingRules });
+      return { ...text(formatGateResult(result)), structuredContent: { ...result } };
     } catch (error) { return failure(error); }
   });
   server.registerPrompt("design", {

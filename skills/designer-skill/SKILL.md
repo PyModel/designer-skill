@@ -103,7 +103,7 @@ Check current primary documentation when using a new API or claiming browser sup
 
 **6. Verify actual outcomes, not just source-code patterns.**
 
-Run the project's discovered formatting, type-check, build, and relevant test commands. For static guidance, `review_and_gate({"target": TARGET, "cwd": PROJECT_ROOT})` is supplemental evidence. The gate returns `schemaVersion: 2`, `staticStatus`, scan coverage, and overall `NOT_VERIFIED` or `FAIL`. It cannot certify rendered UI readiness, and it never returns overall PASS.
+Run the project's discovered formatting, type-check, build, and relevant test commands. For static guidance, `review_and_gate({"target": TARGET, "cwd": PROJECT_ROOT})` is supplemental evidence. The gate returns `schemaVersion: 3`: per-rule coverage (`RAN`, `UNSUPPORTED`, `UNRESOLVED`, `WAIVED`), `staticStatus` (`PASS`, `FAIL` or `INCOMPLETE`), scan coverage, and overall `NOT_VERIFIED` or `FAIL`. `INCOMPLETE` means a required rule could not run on the scanned files; report it rather than treating it as a pass. It cannot certify rendered UI readiness, and it never returns overall PASS.
 
 For rendered checks, use the project's browser/native test harness. Capture before/after states with controlled fixtures, fonts, viewport, device scale, browser, and operating system. Exercise the relevant primary task, keyboard path, focus, responsive reflow, long content, themes, and reduced motion. Inspect the rendered output as well as automated reports. Do not approve a screenshot baseline merely to erase a failure.
 

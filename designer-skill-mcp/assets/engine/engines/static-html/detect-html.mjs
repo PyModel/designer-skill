@@ -1,6 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 import { GENERIC_FONTS, OVERUSED_FONTS } from '../../shared/constants.mjs';
 import {
   checkSourceDesignSystem,
@@ -8,6 +5,7 @@ import {
   mergeDesignSystemFindings,
 } from '../../design-system.mjs';
 import { isFullPage } from '../../shared/page.mjs';
+import { makeLineIndex } from '../../shared/text.mjs';
 import { finding } from '../../findings.mjs';
 import { profileFindings, profileStep, profileStepAsync } from '../../profile/profiler.mjs';
 import {
@@ -31,12 +29,12 @@ import {
   resolveBorderRadiusPx,
 } from '../../rules/checks.mjs';
 import { filterByProviders } from '../../registry/antipatterns.mjs';
-import { detectText, runTextContentAnalyzers } from '../regex/detect-text.mjs';
+import { runTextContentAnalyzers } from '../regex/detect-text.mjs';
 import {
   StaticDocument,
   buildStaticStyleMap,
   buildStaticWindow,
-  collectStaticCssText,
+  collectStaticStylesheets,
 } from './css-cascade.mjs';
 
 function checkStaticPageTypography(document, window) {
@@ -89,13 +87,13 @@ function checkElementBrokenImage(el) {
 }
 
 const STATIC_ELEMENT_RULES = [
-  { id: 'border-rules', selector: '*', run: (el, tag, style, window, customPropMap) => checkElementBorders(tag, style, null, resolveBorderRadiusPx(el, style, parseFloat(style.width) || 0, window)) },
-  { id: 'color-rules', selector: '*', run: (el, tag, style, window, customPropMap) => checkElementColors(el, style, tag, window, customPropMap, false) },
-  { id: 'dark-glow', selector: '*', run: (el, tag, style, window, customPropMap) => checkElementGlow(tag, style, resolveBackground(el.parentElement || el, window, customPropMap)) },
+  { id: 'border-rules', selector: '*', run: (el, tag, style, window) => checkElementBorders(tag, style, null, resolveBorderRadiusPx(el, style, parseFloat(style.width) || 0, window)) },
+  { id: 'color-rules', selector: '*', run: (el, tag, style, window) => checkElementColors(el, style, tag, window) },
+  { id: 'dark-glow', selector: '*', run: (el, tag, style, window) => checkElementGlow(tag, style, resolveBackground(el.parentElement || el, window)) },
   { id: 'motion-rules', selector: '*', run: (el, tag, style) => checkElementMotion(tag, style) },
   { id: 'icon-tile-stack', selector: 'h1,h2,h3,h4,h5,h6', run: (el, tag, _style, window) => checkElementIconTile(el, tag, window) },
   { id: 'italic-serif-display', selector: 'h1,h2', run: (el, tag, style) => checkElementItalicSerif(el, style, tag) },
-  { id: 'hero-eyebrow-chip', selector: 'h1', run: (el, tag, style, window, customPropMap) => checkElementHeroEyebrow(el, style, tag, window, customPropMap) },
+  { id: 'hero-eyebrow-chip', selector: 'h1', run: (el, tag, style, window) => checkElementHeroEyebrow(el, style, tag, window) },
   { id: 'broken-image', selector: 'img', run: (el) => checkElementBrokenImage(el) },
   { id: 'quality-rules', selector: '*', run: (el, tag, style, window) => checkElementQuality(el, style, tag, window) },
   { id: 'oversized-h1', selector: 'h1', run: (el, tag, style, window) => checkElementOversizedH1(el, style, tag, window) },
@@ -103,57 +101,60 @@ const STATIC_ELEMENT_RULES = [
   { id: 'gpt-thin-border-wide-shadow', selector: '*', run: (el, tag, style) => checkElementGptBorderShadow(el, style) },
 ];
 
+class EngineIncompleteError extends Error {
+  constructor(message) {
+    super(message);
+    this.code = 'ENGINE_INCOMPLETE';
+  }
+}
+
+let staticModulesPromise;
+function loadStaticModules() {
+  staticModulesPromise ??= Promise.all([
+    import('htmlparser2'),
+    import('css-select'),
+    import('css-tree'),
+  ]).then(([htmlparser2, cssSelect, csstree]) => ({
+    parseDocument: htmlparser2.parseDocument,
+    selectAll: cssSelect.selectAll,
+    selectOne: cssSelect.selectOne,
+    is: cssSelect.is,
+    compile: cssSelect.compile,
+    csstree,
+  }), (error) => {
+    staticModulesPromise = undefined;
+    // A missing parser must fail the scan: a regex substitute would silently
+    // drop every DOM/cascade rule the gate requires.
+    throw new EngineIncompleteError(`Static HTML parser unavailable (${error?.code || error?.message || 'import failed'}). Reinstall the package.`);
+  });
+  return staticModulesPromise;
+}
+
+// Returns { engine, fullPage, findings, gaps }. `options.content` is the file
+// text; linked stylesheets come from `options.readStylesheet`.
 async function detectHtml(filePath, options = {}) {
   const profile = options?.profile;
-  const html = profileStep(profile, {
+  const html = options.content;
+  if (typeof html !== 'string') throw new TypeError('detectHtml requires options.content');
+  const modules = await profileStepAsync(profile, {
     engine: 'static-html',
     phase: 'setup',
-    ruleId: 'read-html',
+    ruleId: 'import-static-parser',
     target: filePath,
-  }, () => fs.readFileSync(filePath, 'utf-8'));
+  }, loadStaticModules);
 
-  let modules;
-  try {
-    modules = await profileStepAsync(profile, {
-      engine: 'static-html',
-      phase: 'setup',
-      ruleId: 'import-static-parser',
-      target: filePath,
-    }, async () => {
-      const [htmlparser2, cssSelect, csstree, domutils] = await Promise.all([
-        import('htmlparser2'),
-        import('css-select'),
-        import('css-tree'),
-        import('domutils'),
-      ]);
-      return {
-        parseDocument: htmlparser2.parseDocument,
-        selectAll: cssSelect.selectAll,
-        selectOne: cssSelect.selectOne,
-        is: cssSelect.is,
-        csstree,
-        domutils,
-      };
-    });
-  } catch {
-    return detectText(html, filePath, options);
-  }
-
-  const resolvedPath = path.resolve(filePath);
-  const fileDir = path.dirname(resolvedPath);
   const root = profileStep(profile, {
     engine: 'static-html',
     phase: 'parse-html',
     ruleId: 'parse-document',
     target: filePath,
-  }, () => modules.parseDocument(html, { lowerCaseAttributeNames: false, lowerCaseTags: true }));
+  }, () => modules.parseDocument(html, { lowerCaseAttributeNames: false, lowerCaseTags: true, withStartIndices: true }));
+  const lineOf = makeLineIndex(html);
 
-  const cssText = collectStaticCssText(root, fileDir, profile, filePath, modules);
+  const { sheets, gaps } = collectStaticStylesheets(root, modules, filePath, options);
   const document = new StaticDocument(root, modules);
-  buildStaticStyleMap(root, document, cssText, modules, profile, filePath);
-  const window = buildStaticWindow(document);
-
-  const customPropMap = null;
+  buildStaticStyleMap(root, document, sheets, modules, profile, filePath, gaps);
+  const window = buildStaticWindow(document, gaps);
 
   const findings = [];
   const runElementCheck = (ruleId, callback) => profile
@@ -167,8 +168,8 @@ async function detectHtml(filePath, options = {}) {
     for (const el of elements) {
       const tag = el.tagName.toLowerCase();
       const style = window.getComputedStyle(el);
-      for (const f of runElementCheck(rule.id, () => rule.run(el, tag, style, window, customPropMap))) {
-        findings.push(finding(f.id, filePath, f.snippet));
+      for (const f of runElementCheck(rule.id, () => rule.run(el, tag, style, window))) {
+        findings.push(finding(f.id, filePath, f.snippet, lineOf(el.node.startIndex)));
       }
     }
   }
@@ -189,7 +190,8 @@ async function detectHtml(filePath, options = {}) {
     findings.push(...mergeDesignSystemFindings(staticDesignFindings, sourceDesignFindings));
   }
 
-  if (isFullPage(html)) {
+  const fullPage = isFullPage(html);
+  if (fullPage) {
     const runPageCheck = (ruleId, callback) => profile
       ? profileFindings(profile, { engine: 'static-html', phase: 'page', ruleId, target: filePath }, callback)
       : callback();
@@ -223,7 +225,15 @@ async function detectHtml(filePath, options = {}) {
     }
   }
 
-  return filterByProviders(findings, options.providers);
+  return {
+    engine: 'static-html',
+    fullPage,
+    findings: filterByProviders(findings, options.providers),
+    gaps: gaps.map(({ element, ...gap }) => ({
+      ...gap,
+      ...(element?.node ? { line: lineOf(element.node.startIndex) } : {}),
+    })),
+  };
 }
 
 export { checkStaticPageTypography, STATIC_ELEMENT_RULES, detectHtml };

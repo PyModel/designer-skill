@@ -2,6 +2,7 @@ import { GENERIC_FONTS } from '../../shared/constants.mjs';
 import { isNeutralColor } from '../../shared/color.mjs';
 import { checkSourceDesignSystem } from '../../design-system.mjs';
 import { isFullPage } from '../../shared/page.mjs';
+import { makeLineIndex, stripElementBlocks, stripHtmlComments, stripTags } from '../../shared/text.mjs';
 import { finding } from '../../findings.mjs';
 import { filterByProviders } from '../../registry/antipatterns.mjs';
 import { profileFindings, profileStep } from '../../profile/profiler.mjs';
@@ -10,18 +11,26 @@ import { profileFindings, profileStep } from '../../profile/profiler.mjs';
 // Regex fallback (non-HTML files: CSS, JSX, TSX, etc.)
 // ---------------------------------------------------------------------------
 
-const hasRounded = (line) => /\brounded(?:-\w+)?\b/.test(line);
-const hasBorderRadius = (line) => /border-radius/i.test(line);
-const isSafeElement = (line) => /<(?:blockquote|nav[\s>]|pre[\s>]|code[\s>]|a\s|input[\s>]|span[\s>])/i.test(line);
+// Line-level predicates are memoized per (pattern, line): a minified line can
+// carry thousands of matches, and re-scanning it per match is quadratic.
+const lineMemo = new Map();
+function lineHas(re, line) {
+  const key = `${re.source}/${re.flags}`;
+  const entry = lineMemo.get(key);
+  if (entry && entry.line === line) return entry.result;
+  const result = re.test(line);
+  lineMemo.set(key, { line, result });
+  return result;
+}
+
+const hasRounded = (line) => lineHas(/\brounded(?:-\w+)?\b/, line);
+const hasBorderRadius = (line) => lineHas(/border-radius/i, line);
+const isSafeElement = (line) => lineHas(/<(?:blockquote|nav[\s>]|pre[\s>]|code[\s>]|a\s|input[\s>]|span[\s>])/i, line);
 
 /** Strip HTML to plain text — drops script/style/comments/tags so
  *  content-text analyzers don't false-positive on code or CSS. */
 function stripHtmlToText(html) {
-  return html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<[^>]+>/g, ' ')
+  return stripTags(stripHtmlComments(stripElementBlocks(stripElementBlocks(html, 'script'), 'style')))
     .replace(/\s+/g, ' ');
 }
 
@@ -54,6 +63,22 @@ function isNeutralBorderColor(str) {
     return (Math.max(r, g, b) - Math.min(r, g, b)) < 30;
   }
   return false;
+}
+
+const COLORED_BG_CLASS = /\bbg-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d+\b/;
+let coloredBgLine = null;
+let coloredBgResult = null;
+// Per-line memo: a minified line can hold thousands of matches.
+function coloredBgClass(line) {
+  if (line !== coloredBgLine) {
+    coloredBgLine = line;
+    coloredBgResult = line.match(COLORED_BG_CLASS)?.[0] ?? null;
+  }
+  return coloredBgResult;
+}
+
+function hasBoundImageSource(tag) {
+  return /\{/.test(tag) || /\[\s*(?:attr\.)?src\s*\]/i.test(tag) || /\bv-bind\s*=/i.test(tag) || /\bv-bind:src\b/i.test(tag);
 }
 
 const REGEX_MATCHERS = [
@@ -92,22 +117,22 @@ const REGEX_MATCHERS = [
     fmt: (m) => `Google Fonts: ${m[1].replace(/\+/g, ' ')}` },
   // --- Gradient text ---
   { id: 'gradient-text', regex: /background-clip\s*:\s*text|-webkit-background-clip\s*:\s*text/gi,
-    test: (m, line) => /gradient/i.test(line),
+    test: (m, line) => lineHas(/gradient/i, line),
     fmt: () => 'background-clip: text + gradient' },
   // --- Gradient text (Tailwind) ---
   { id: 'gradient-text', regex: /\bbg-clip-text\b/g,
-    test: (m, line) => /\bbg-gradient-to-/i.test(line),
+    test: (m, line) => lineHas(/\bbg-gradient-to-/i, line),
     fmt: () => 'bg-clip-text + bg-gradient' },
   // --- Tailwind gray on colored bg ---
   { id: 'gray-on-color', regex: /\btext-(?:gray|slate|zinc|neutral|stone)-(\d+)\b/g,
-    test: (m, line) => /\bbg-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d+\b/.test(line),
-    fmt: (m, line) => { const bg = line.match(/\bbg-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d+\b/); return `${m[0]} on ${bg?.[0] || '?'}`; } },
+    test: (m, line) => coloredBgClass(line) !== null,
+    fmt: (m, line) => `${m[0]} on ${coloredBgClass(line) || '?'}` },
   // --- Tailwind AI palette ---
   { id: 'ai-color-palette', regex: /\btext-(?:purple|violet|indigo)-(\d+)\b/g,
-    test: (m, line) => /\btext-(?:[2-9]xl|[3-9]xl)\b|<h[1-3]/i.test(line),
+    test: (m, line) => lineHas(/\btext-(?:[2-9]xl|[3-9]xl)\b|<h[1-3]/i, line),
     fmt: (m) => `${m[0]} on heading` },
   { id: 'ai-color-palette', regex: /\bfrom-(?:purple|violet|indigo)-(\d+)\b/g,
-    test: (m, line) => /\bto-(?:purple|violet|indigo|blue|cyan|pink|fuchsia)-\d+\b/.test(line),
+    test: (m, line) => lineHas(/\bto-(?:purple|violet|indigo|blue|cyan|pink|fuchsia)-\d+\b/, line),
     fmt: (m) => `${m[0]} gradient` },
   // --- Bounce/elastic easing ---
   { id: 'bounce-easing', regex: /\banimate-bounce\b/g,
@@ -149,12 +174,14 @@ const REGEX_MATCHERS = [
       return `transition-property: ${found ? found.join(', ') : m[1].trim()}`;
     } },
   // --- Broken image: src="" or src="#" or src=" " ---
-  { id: 'broken-image', regex: /<img\b[^>]*?\bsrc\s*=\s*(?:""|''|"\s+"|'\s+'|"#"|'#')/gi,
+  { id: 'broken-image', regex: /<img\b[^>]{0,4000}?\bsrc\s*=\s*(?:""|''|"\s+"|'\s+'|"#"|'#')/gi,
     test: () => true,
     fmt: (m) => m[0].slice(0, 100) },
   // --- Broken image: <img> with no src attribute at all ---
-  { id: 'broken-image', regex: /<img\b(?:(?!\bsrc\s*=)[^>])*>/gi,
-    test: (m) => !/\bsrc\s*=/i.test(m[0]),
+  // Component syntax binds src without a literal `src=`: Svelte `{src}`,
+  // JSX `{...props}`, Angular `[src]`/`[attr.src]`, Vue `v-bind="obj"`.
+  { id: 'broken-image', regex: /<img\b[^>]{0,4000}>/gi,
+    test: (m) => !/\bsrc\s*=/i.test(m[0]) && !hasBoundImageSource(m[0]),
     fmt: (m) => m[0].slice(0, 100) },
 ];
 
@@ -330,8 +357,7 @@ const REGEX_ANALYZERS = [
       // Check blur: look for pattern like "0 0 20px" (third number > 4)
       const pxVals = [...val.matchAll(/(\d+)px|(?<![.\d])\b(0)\b(?![.\d])/g)].map(p => +(p[1] || p[2]));
       if (pxVals.length >= 3 && pxVals[2] > 4) {
-        const lines = content.substring(0, m.index).split('\n');
-        return [finding('dark-glow', filePath, `Colored glow (rgb(${r},${g},${b})) on dark page`, lines.length)];
+        return [finding('dark-glow', filePath, `Colored glow (rgb(${r},${g},${b})) on dark page`, makeLineIndex(content)(m.index))];
       }
     }
     return [];
@@ -346,12 +372,18 @@ function extractStyleBlocks(content, ext) {
   ext = ext.toLowerCase();
   if (ext !== '.vue' && ext !== '.svelte') return [];
   const blocks = [];
-  const re = /<style[^>]*>([\s\S]*?)<\/style>/gi;
-  let m;
-  while ((m = re.exec(content)) !== null) {
-    const before = content.substring(0, m.index);
-    const startLine = before.split('\n').length + 1;
-    blocks.push({ content: m[1], startLine });
+  const lower = content.toLowerCase();
+  const lineOf = makeLineIndex(content);
+  let index = 0;
+  for (;;) {
+    let start = lower.indexOf('<style', index);
+    while (start !== -1 && /[a-z0-9-]/.test(lower[start + 6] || '')) start = lower.indexOf('<style', start + 1);
+    if (start === -1) break;
+    const openEnd = lower.indexOf('>', start);
+    const close = openEnd === -1 ? -1 : lower.indexOf('</style>', openEnd + 1);
+    if (close === -1) break;
+    blocks.push({ content: content.slice(openEnd + 1, close), startLine: lineOf(start) + 1 });
+    index = close + 8;
   }
   return blocks;
 }
@@ -366,64 +398,47 @@ function extractCSSinJS(content, ext) {
   ext = ext.toLowerCase();
   if (!CSS_IN_JS_EXTENSIONS.has(ext)) return [];
   const blocks = [];
-  const re = /(?:styled(?:\.\w+|\([^)]+\))|css)\s*`([\s\S]*?)`/g;
+  const lineOf = makeLineIndex(content);
+  const re = /(?:styled(?:\.\w+|\([^)\n]{0,200}\))|css)\s*`/g;
   let m;
   while ((m = re.exec(content)) !== null) {
-    const before = content.substring(0, m.index);
-    const startLine = before.split('\n').length;
-    blocks.push({ content: m[1], startLine });
+    const bodyStart = m.index + m[0].length;
+    const bodyEnd = content.indexOf('`', bodyStart);
+    if (bodyEnd === -1) break;
+    blocks.push({ content: content.slice(bodyStart, bodyEnd), startLine: lineOf(m.index) });
+    re.lastIndex = bodyEnd + 1;
   }
   return blocks;
 }
 
 function runRegexMatchers(lines, filePath, lineOffset = 0, blockContext = null, options = {}) {
   const { profile, phase = 'regex-matchers' } = options || {};
-  const findings = [];
-  if (!profile) {
-    for (const matcher of REGEX_MATCHERS) {
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        matcher.regex.lastIndex = 0;
-        let m;
-        while ((m = matcher.regex.exec(line)) !== null) {
-          // For extracted blocks, use nearby lines as context for multi-line CSS patterns
-          const context = blockContext
-            ? lines.slice(Math.max(0, i - 3), Math.min(lines.length, i + 4)).join(' ')
-            : line;
-          if (matcher.test(m, context)) {
-            findings.push(finding(matcher.id, filePath, matcher.fmt(m, context), i + 1 + lineOffset));
-          }
+  const scan = (matcher) => {
+    const matches = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      matcher.regex.lastIndex = 0;
+      let context = null;
+      let m;
+      while ((m = matcher.regex.exec(line)) !== null) {
+        if (m[0] === '') { matcher.regex.lastIndex++; continue; }
+        // For extracted blocks, nearby lines give multi-line CSS context;
+        // built once per line, not once per match.
+        context ??= blockContext
+          ? lines.slice(Math.max(0, i - 3), Math.min(lines.length, i + 4)).join(' ')
+          : line;
+        if (matcher.test(m, context)) {
+          matches.push(finding(matcher.id, filePath, matcher.fmt(m, context), i + 1 + lineOffset));
         }
       }
     }
-    return findings;
-  }
-
+    return matches;
+  };
+  const findings = [];
   for (const matcher of REGEX_MATCHERS) {
-    const matcherFindings = profileFindings(profile, {
-      engine: 'regex',
-      phase,
-      ruleId: matcher.id,
-      target: filePath,
-    }, () => {
-      const matches = [];
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        matcher.regex.lastIndex = 0;
-        let m;
-        while ((m = matcher.regex.exec(line)) !== null) {
-          // For extracted blocks, use nearby lines as context for multi-line CSS patterns
-          const context = blockContext
-            ? lines.slice(Math.max(0, i - 3), Math.min(lines.length, i + 4)).join(' ')
-            : line;
-          if (matcher.test(m, context)) {
-            matches.push(finding(matcher.id, filePath, matcher.fmt(m, context), i + 1 + lineOffset));
-          }
-        }
-      }
-      return matches;
-    });
-    findings.push(...matcherFindings);
+    findings.push(...(profile
+      ? profileFindings(profile, { engine: 'regex', phase, ruleId: matcher.id, target: filePath }, () => scan(matcher))
+      : scan(matcher)));
   }
   return findings;
 }
@@ -517,13 +532,14 @@ function detectText(content, filePath, options = {}) {
 
   // Deduplicate findings (same antipattern + similar snippet, within 2 lines)
   const deduped = [];
+  const seenLines = new Map();
   for (const f of findings) {
-    const isDupe = deduped.some(d =>
-      d.antipattern === f.antipattern &&
-      d.snippet === f.snippet &&
-      Math.abs(d.line - f.line) <= 2
-    );
-    if (!isDupe) deduped.push(f);
+    const key = `${f.antipattern}\0${f.snippet}`;
+    const lines = seenLines.get(key);
+    if (lines?.some((line) => Math.abs(line - f.line) <= 2)) continue;
+    if (lines) lines.push(f.line);
+    else seenLines.set(key, [f.line]);
+    deduped.push(f);
   }
 
   // Page-level analyzers only run on full pages
@@ -549,7 +565,12 @@ function detectText(content, filePath, options = {}) {
     }
   }
 
-  return filterByProviders(deduped, options?.providers);
+  return {
+    engine: 'regex',
+    fullPage: shouldRunPageAnalyzers(content, filePath),
+    findings: filterByProviders(deduped, options?.providers),
+    gaps: [],
+  };
 }
 
 export {

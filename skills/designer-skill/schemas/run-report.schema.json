@@ -153,6 +153,41 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "required": {
+                  "const": true
+                },
+                "status": {
+                  "const": "PASS"
+                }
+              },
+              "required": [
+                "required",
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "evidence": {
+                  "contains": {
+                    "properties": {
+                      "origin": {
+                        "enum": [
+                          "executed",
+                          "observed"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "origin"
+                    ]
+                  }
+                }
+              }
+            }
           }
         ]
       }
@@ -388,6 +423,27 @@
         "properties": {
           "uiReadiness": {
             "const": "PASS"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "taskStatus": {
+            "const": "BLOCKED"
+          }
+        },
+        "required": [
+          "taskStatus"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uiReadiness": {
+            "not": {
+              "const": "PASS"
+            }
           }
         }
       }

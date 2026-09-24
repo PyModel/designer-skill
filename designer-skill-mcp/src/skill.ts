@@ -91,10 +91,6 @@ export const UX_REFERENCE_DESCRIPTIONS: Record<UxReferenceName, string> = {
 export const ALL_REFERENCE_NAMES = [...REFERENCE_NAMES, ...UX_REFERENCE_NAMES] as const;
 export type ReferenceId = ReferenceName | UxReferenceName;
 
-interface SkillCache {
-  router: string;
-  refs: Map<ReferenceId, string>;
-}
 const cache = new Map<string, string>();
 function readDocument(path: string): string {
   let content = cache.get(path);
@@ -105,7 +101,6 @@ function readDocument(path: string): string {
   return content;
 }
 export function getSkillRouter(): string { return readDocument(join(bundledRoot("skill"), "SKILL.md")); }
-export function getUxRouter(): string { return readDocument(join(bundledRoot("ux-designer"), "SKILL.md")); }
 export function isReferenceName(value: string): value is ReferenceId {
   return (ALL_REFERENCE_NAMES as readonly string[]).includes(value);
 }

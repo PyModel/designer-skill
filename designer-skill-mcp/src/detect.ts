@@ -1,130 +1,194 @@
 // Static detector adapter. Coverage is evidence; an empty finding list is not.
-import { readFileSync, existsSync, lstatSync, realpathSync } from "node:fs";
-import { createHash } from "node:crypto";
-import { dirname, extname, join, resolve, relative } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { assertWithin, DesignError, projectRoot, validateConfigFiles, selectScanFiles, type ScanCoverage } from "./scope.js";
+// File selection and policy live here; every file read and every detector runs
+// in a worker thread under a deadline and heap limit (assets/engine/node).
+import { Worker } from "node:worker_threads";
+import { join, relative, sep } from "node:path";
+import { pathToFileURL } from "node:url";
+import { DesignError, SCAN_LIMITS, loadDetectorPolicy, projectRoot, selectScanFiles, type ScanCoverage } from "./scope.js";
+import { resolveDesignSources } from "./context.js";
 import { bundledRoot } from "./assets.js";
 
 export interface DetectionFinding {
   file: string;
   line?: number;
   antipattern: string;
+  name: string;
+  severity: string;
   snippet: string;
   description: string;
   importedBy?: string[];
 }
 
+export interface ScanGap {
+  kind: string;
+  rule?: string;
+  detail?: string;
+  line?: number;
+}
+
+export interface ScannedFile {
+  path: string;
+  engine: "static-html" | "regex";
+  fullPage: boolean;
+  gaps: ScanGap[];
+}
+
+export type DesignSystemStatus = "absent" | "no-tokens" | "loaded" | "invalid" | "disabled";
+
 export interface DetectionReport {
   target: string;
   coverage: ScanCoverage;
   findings: DetectionFinding[];
-  files: Array<{ path: string; sha256: string }>;
+  files: Array<{ path: string; sha256: string; role: "selected" | "linked-stylesheet" | "design-system" }>;
+  scannedFiles: ScannedFile[];
+  designSystem: { status: DesignSystemStatus; reason?: string };
   ignoredRules: string[];
+  waivedRules: string[];
   ignoredValues: number;
 }
 
-function resolveEngineDir(): string {
-  try {
-    return bundledRoot("engine");
-  } catch {
-    throw new DesignError("ENGINE_MISSING", "Detector engine not found in assets/engine. Run npm run build.");
-  }
+export interface ScanOptions {
+  cwd?: string;
+  useConfig?: boolean;
+  /** Rules that only the committed config may waive (required + blocking). */
+  protectedRules?: ReadonlySet<string>;
 }
 
-/** The vendored engine is process-stable; import it once and cache the handle. */
-let enginePromise: ReturnType<typeof loadEngineOnce> | undefined;
-async function loadEngineOnce() {
-  const dir = resolveEngineDir();
-  const [html, text, design, config, fs] = await Promise.all([
-    import(pathToFileURL(join(dir, "engines/static-html/detect-html.mjs")).href),
-    import(pathToFileURL(join(dir, "engines/regex/detect-text.mjs")).href),
-    import(pathToFileURL(join(dir, "design-system.mjs")).href),
-    import(pathToFileURL(join(dir, "lib/designer-skill-config.mjs")).href),
-    import(pathToFileURL(join(dir, "node/file-system.mjs")).href),
-  ]);
-  return {
-    detectHtml: html.detectHtml as (file: string, options: object) => Promise<DetectionFinding[]>,
-    detectText: text.detectText as (text: string, file: string, options: object) => DetectionFinding[],
-    loadDesignSystemForCwd: design.loadDesignSystemForCwd as (cwd: string) => unknown,
-    readDetectionConfig: config.readDetectionConfig as (cwd: string) => {
-      ignoreRules: string[]; ignoreFiles: string[]; ignoreValues: string[]; designSystem?: { enabled?: boolean };
-    },
-    filterDetectionFindings: config.filterDetectionFindings as (findings: DetectionFinding[], config: unknown) => DetectionFinding[],
-    shouldIgnoreDetectionFile: config.shouldIgnoreDetectionFile as (file: string, cwd: string, config: unknown) => boolean,
-    HTML_EXTENSIONS: fs.HTML_EXTENSIONS as Set<string>,
-    SCANNABLE_EXTENSIONS: fs.SCANNABLE_EXTENSIONS as Set<string>,
-    SKIP_DIRS: fs.SKIP_DIRS as Set<string>,
-    buildImportGraph: fs.buildImportGraph as (files: string[]) => Map<string, Set<string>>,
+interface EngineModules {
+  registry: { ANTIPATTERNS: Array<{ id: string }> };
+  config: {
+    assertValidGlob: (glob: string) => void;
+    normalizeIgnoreValueEntries: (entries: unknown[]) => unknown[];
+    shouldIgnoreDetectionFile: (relPath: string, config: unknown) => boolean;
+    shouldPruneDetectionDirectory: (relDir: string, config: unknown) => boolean;
   };
+  fileSystem: { SCANNABLE_EXTENSIONS: Set<string>; SKIP_DIRS: Set<string> };
+  workerUrl: URL;
 }
 
-/** Cached engine handle: the vendored engine is imported once per process. */
-async function loadEngine() {
-  enginePromise ??= loadEngineOnce();
+const DEFAULT_TIMEOUT_MS = 60_000;
+const WORKER_HEAP_MB = 1024;
+
+let enginePromise: Promise<EngineModules> | undefined;
+function loadEngine(): Promise<EngineModules> {
+  enginePromise ??= (async () => {
+    let dir: string;
+    try {
+      dir = bundledRoot("engine");
+    } catch {
+      throw new DesignError("ENGINE_MISSING", "Detector engine not found in assets/engine. Reinstall the package.");
+    }
+    const load = (file: string) => import(pathToFileURL(join(dir, file)).href);
+    const [registry, config, fileSystem] = await Promise.all([
+      load("registry/antipatterns.mjs"), load("lib/designer-skill-config.mjs"), load("node/file-system.mjs"),
+    ]);
+    return { registry, config, fileSystem, workerUrl: pathToFileURL(join(dir, "node/scan-worker.mjs")) } as EngineModules;
+  })().catch((error) => {
+    enginePromise = undefined; // a transient failure must not poison the process
+    throw error;
+  });
   return enginePromise;
 }
 
-export async function scanAntipatterns(
-  target: string,
-  options: { cwd?: string; useConfig?: boolean } = {},
-): Promise<DetectionReport> {
-  const cwd = projectRoot(options.cwd ?? process.cwd());
-  if (options.useConfig !== false) validateConfigFiles(cwd);
+export async function registryIds(): Promise<Set<string>> {
+  return new Set((await loadEngine()).registry.ANTIPATTERNS.map((rule) => rule.id));
+}
+
+function scanTimeoutMs(): number {
+  const raw = Number(process.env.DESIGNER_SKILL_SCAN_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
+}
+
+interface WorkerResult {
+  findings: DetectionFinding[];
+  fileMeta: ScannedFile[];
+  files: DetectionReport["files"];
+  bytesScanned: number;
+  unsupportedBinary: number;
+  designSystem: DetectionReport["designSystem"];
+}
+
+function runWorker(workerUrl: URL, job: unknown): Promise<WorkerResult> {
+  const timeoutMs = scanTimeoutMs();
+  return new Promise((resolvePromise, reject) => {
+    const worker = new Worker(workerUrl, { workerData: { job }, resourceLimits: { maxOldGenerationSizeMb: WORKER_HEAP_MB } });
+    let currentFile = "";
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      void worker.terminate();
+      fn();
+    };
+    const timer = setTimeout(() => finish(() => reject(new DesignError("SCAN_LIMIT",
+      `Scan exceeded ${timeoutMs} ms${currentFile ? ` while analyzing ${currentFile}` : ""}. Narrow the target or ignore that file.`,
+      { bound: "time", limit: timeoutMs, path: currentFile || "." }))), timeoutMs);
+    worker.on("message", (message: { type: string; file?: string; result?: WorkerResult; error?: { code: string; message: string; details?: Record<string, unknown> } }) => {
+      if (message.type === "progress") currentFile = message.file ?? "";
+      else if (message.type === "result") finish(() => resolvePromise(message.result!));
+      else if (message.type === "error") finish(() => reject(new DesignError(message.error!.code, message.error!.message, message.error!.details)));
+    });
+    worker.on("error", (error: Error & { code?: string }) => finish(() => reject(error.code === "ERR_WORKER_OUT_OF_MEMORY"
+      ? new DesignError("SCAN_LIMIT", `Scan exceeded the ${WORKER_HEAP_MB} MiB analysis heap${currentFile ? ` while analyzing ${currentFile}` : ""}.`,
+        { bound: "memory", limit: WORKER_HEAP_MB, path: currentFile || "." })
+      : new DesignError("OPERATION_FAILED", `Detector failed: ${error.message}`))));
+    worker.on("exit", (code) => finish(() => reject(new DesignError("OPERATION_FAILED", `Detector exited unexpectedly (code ${code}).`))));
+  });
+}
+
+export async function scanAntipatterns(target: string, options: ScanOptions = {}): Promise<DetectionReport> {
+  const root = projectRoot(options.cwd ?? process.cwd());
   const engine = await loadEngine();
-  const config = options.useConfig === false
-    ? { ignoreRules: [], ignoreFiles: [], ignoreValues: [], designSystem: { enabled: true } }
-    : engine.readDetectionConfig(cwd);
-  const selected = selectScanFiles(cwd, target, engine.SCANNABLE_EXTENSIONS, engine.SKIP_DIRS,
-    (file) => engine.shouldIgnoreDetectionFile(file, cwd, config));
-  const designSystem = options.useConfig !== false && config.designSystem?.enabled !== false
-    ? engine.loadDesignSystemForCwd(selected.root) : null;
-  const scanOptions = designSystem ? { designSystem } : {};
-  const findings: DetectionFinding[] = [];
-  const files: DetectionReport["files"] = [];
-  const graph = engine.buildImportGraph(selected.files);
-  const importers = new Map<string, string[]>();
-  for (const [importer, imports] of graph) {
-    for (const imported of imports) {
-      importers.set(imported, [...(importers.get(imported) ?? []), relative(selected.root, importer)]);
-    }
-  }
-  for (const file of selected.files) {
-    const before = lstatSync(file);
-    assertWithin(selected.root, realpathSync(file));
-    if (!before.isFile() || before.size > 2 * 1024 * 1024) {
-      throw new DesignError("CONCURRENT_CHANGE", "Selected input changed before scanning.");
-    }
-    const content = readFileSync(file);
-    const digest = createHash("sha256").update(content).digest("hex");
-    const detected = engine.HTML_EXTENSIONS.has(extname(file).toLowerCase())
-      ? await engine.detectHtml(file, scanOptions)
-      : engine.detectText(content.toString("utf8"), file, scanOptions);
-    const after = lstatSync(file);
-    if (!after.isFile() || before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs ||
-      digest !== createHash("sha256").update(readFileSync(file)).digest("hex")) {
-      throw new DesignError("CONCURRENT_CHANGE", "Input changed during scanning. Rerun against a stable revision.");
-    }
-    findings.push(...detected.map((finding) => ({ ...finding, importedBy: importers.get(file) })));
-    if (findings.length > 20_000) throw new DesignError("SCAN_LIMIT", "Too many findings. Narrow the target.");
-    selected.coverage.scannedFiles++;
-    selected.coverage.bytesScanned += content.byteLength;
-    files.push({ path: relative(selected.root, file), sha256: digest });
-  }
+  const ruleIds = new Set(engine.registry.ANTIPATTERNS.map((rule) => rule.id));
+  const policy = options.useConfig === false
+    ? { ignoreRules: [], ignoreFiles: [], ignoreValues: [], designSystemEnabled: true, webRoot: null, waivedRules: [] }
+    : loadDetectorPolicy(root, {
+      ruleIds,
+      protectedRules: options.protectedRules ?? new Set(),
+      validateGlob: engine.config.assertValidGlob,
+      normalizeIgnoreValues: engine.config.normalizeIgnoreValueEntries,
+    });
+  const selected = selectScanFiles(root, target, {
+    extensions: engine.fileSystem.SCANNABLE_EXTENSIONS,
+    skipDirectories: engine.fileSystem.SKIP_DIRS,
+    isIgnoredFile: (rel) => engine.config.shouldIgnoreDetectionFile(rel, policy),
+    isPrunedDirectory: (rel) => engine.config.shouldPruneDetectionDirectory(rel, policy),
+  });
+  const design = policy.designSystemEnabled ? resolveDesignSources(root) : null;
+  const result = selected.files.length
+    ? await runWorker(engine.workerUrl, {
+      root,
+      webRoot: policy.webRoot,
+      files: selected.files,
+      policy: {
+        ignoreRules: policy.ignoreRules,
+        ignoreValues: policy.ignoreValues,
+        designSystemEnabled: policy.designSystemEnabled,
+      },
+      design,
+      limits: { maxFileBytes: SCAN_LIMITS.fileBytes, maxTotalBytes: SCAN_LIMITS.totalBytes, maxFindings: SCAN_LIMITS.findings },
+    })
+    : { findings: [], fileMeta: [], files: [], bytesScanned: 0, unsupportedBinary: 0, designSystem: { status: "absent" as const } };
+  selected.coverage.scannedFiles = result.fileMeta.length;
+  selected.coverage.bytesScanned = result.bytesScanned;
+  selected.coverage.unsupportedFiles += result.unsupportedBinary;
   return {
-    target: relative(selected.root, selected.target) || ".",
+    target: relative(root, selected.target).split(sep).join("/") || ".",
     coverage: selected.coverage,
-    findings: engine.filterDetectionFindings(findings, config), files,
-    ignoredRules: [...config.ignoreRules], ignoredValues: config.ignoreValues.length,
+    findings: result.findings,
+    files: result.files,
+    scannedFiles: result.fileMeta,
+    designSystem: result.designSystem,
+    ignoredRules: policy.ignoreRules,
+    waivedRules: policy.waivedRules,
+    ignoredValues: policy.ignoreValues.length,
   };
 }
 
-/** Compatibility adapter for callers that only consume findings. Prefer scanAntipatterns. */
-export async function detectAntipatterns(target: string, options: { cwd?: string; useConfig?: boolean } = {}): Promise<DetectionFinding[]> {
-  return (await scanAntipatterns(target, options)).findings;
-}
-
-export function formatDetectionResults(findings: DetectionFinding[]): string {
+export function formatDetectionResults(findings: DetectionFinding[], limit = Infinity): string {
   if (!findings.length) return "No static findings. This does not establish rendered UI readiness.";
-  return findings.map((f) => `[${f.antipattern}] ${f.file}${f.line ? `:${f.line}` : ""}: ${f.description}`).join("\n");
+  const lines = findings.slice(0, limit).map((f) => `[${f.antipattern}] ${f.file}${f.line ? `:${f.line}` : ""}: ${f.snippet}`);
+  if (findings.length > limit) lines.push(`… ${findings.length - limit} more in structuredContent.findings`);
+  return lines.join("\n");
 }

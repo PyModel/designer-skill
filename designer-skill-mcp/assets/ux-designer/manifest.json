@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "algorithm": "sha256",
   "files": {
+    "SKILL.md": "bde4ad675376c89577e1de9ff0dc8e74835c9e3d47bb16d24abb7866a06111b7",
     "references/01-core-principles.md": "5cec568a8abe7ca6a373fc9d186370a14d0ac8a6fb24da76da27b77c09268f3f",
     "references/02-laws-of-ux.md": "decbad9264a228272b161b569366b4cf411838d5f0e7f4ff74aa8682ab58b61b",
     "references/03-accessibility.md": "64244316bd155582a49f9ac701cb87e5637e43c13c8cfb7caa9527642fa537c4",
@@ -27,7 +28,6 @@
     "references/21-data-tables.md": "9d5006d72877cf2ec8f9e0d6df53de8f1ea652d6497d8b52451fb29670e9b121",
     "references/22-performance-ux.md": "700f17200ecb76b8406471d8b44f0d77edbab57515e33117d307267b65be6123",
     "references/23-internationalization.md": "7c37b45b6c09826e988780ad2483deb2e3bfdaf8ee59e434bf918e7dc25317eb",
-    "references/24-voice-and-multimodal.md": "57a0283526a1927f7df379bdc257f7fcad1b67f0b910dc06f98de50d23dc3163",
-    "SKILL.md": "bde4ad675376c89577e1de9ff0dc8e74835c9e3d47bb16d24abb7866a06111b7"
+    "references/24-voice-and-multimodal.md": "57a0283526a1927f7df379bdc257f7fcad1b67f0b910dc06f98de50d23dc3163"
   }
 }

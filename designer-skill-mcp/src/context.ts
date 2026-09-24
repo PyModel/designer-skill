@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { assertWithin, DesignError, projectRoot } from "./scope.js";
+import { existsSync, realpathSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { assertWithin, projectRoot, readConfinedFile } from "./scope.js";
 
 const PRODUCT_NAMES = ["PRODUCT.md", "Product.md", "product.md"];
 const DESIGN_NAMES = ["DESIGN.md", "Design.md", "design.md"];
@@ -10,7 +10,13 @@ export interface ProjectContext {
   contextDir: string; register: "brand" | "product" | null;
 }
 
-function findDocument(root: string, names: string[]): string | null {
+const CONTEXT_MAX_BYTES = 1024 * 1024;
+const toPosix = (path: string) => path.split(sep).join("/");
+
+// The single resolver for project documents (used by load_project_context and
+// by the detector's design-system checks). Candidates must resolve inside the
+// project root; an escaping symlink is a SCOPE_VIOLATION for every tool.
+function contextDirs(root: string): string[] {
   const dirs = [root, join(root, ".agents/context"), join(root, "docs")];
   const env = process.env.DESIGNER_SKILL_CONTEXT_DIR?.trim();
   if (env) {
@@ -18,26 +24,52 @@ function findDocument(root: string, names: string[]): string | null {
     assertWithin(root, dir);
     dirs.push(dir);
   }
-  for (const dir of dirs) {
+  return dirs;
+}
+
+function findDocument(root: string, names: string[]): string | null {
+  for (const dir of contextDirs(root)) {
     for (const name of names) {
       const path = join(dir, name);
       if (!existsSync(path)) continue;
       const real = realpathSync(path);
       assertWithin(root, real);
-      const stat = statSync(real);
-      if (!stat.isFile() || stat.size > 1024 * 1024) {
-        throw new DesignError("CONTEXT_INVALID", "Context must be a regular UTF-8 document no larger than 1 MiB.");
-      }
       return real;
     }
   }
   return null;
 }
 
-export function resolveContextDir(cwd: string): string {
-  const root = projectRoot(cwd);
-  const path = findDocument(root, PRODUCT_NAMES) ?? findDocument(root, DESIGN_NAMES);
-  return path ? dirname(path) : root;
+function readDocument(root: string, path: string | null): string | null {
+  return path ? readConfinedFile(root, path, CONTEXT_MAX_BYTES, "CONTEXT_INVALID") : null;
+}
+
+export interface DesignSources {
+  /** Project-relative DESIGN.md path, if any. */
+  markdownPath?: string;
+  /** Project-relative token sidecar (.designer-skill/design.json or DESIGN.json), if any. */
+  sidecarPath?: string;
+}
+
+/** DESIGN.md and its token sidecar, resolved under the same confinement as context loading. */
+export function resolveDesignSources(root: string): DesignSources {
+  const markdown = findDocument(root, DESIGN_NAMES);
+  const sidecarCandidates = [
+    join(root, ".designer-skill", "design.json"),
+    join(root, "DESIGN.json"),
+    ...(markdown ? [join(dirname(markdown), "DESIGN.json")] : []),
+  ];
+  let sidecar: string | null = null;
+  for (const candidate of sidecarCandidates) {
+    if (!existsSync(candidate)) continue;
+    sidecar = realpathSync(candidate);
+    assertWithin(root, sidecar);
+    break;
+  }
+  return {
+    ...(markdown ? { markdownPath: toPosix(relative(root, markdown)) } : {}),
+    ...(sidecar ? { sidecarPath: toPosix(relative(root, sidecar)) } : {}),
+  };
 }
 
 export function extractRegister(product: string | null): "brand" | "product" | null {
@@ -49,8 +81,8 @@ export function loadProjectContext(cwd = process.cwd()): ProjectContext {
   const root = projectRoot(cwd);
   const productPath = findDocument(root, PRODUCT_NAMES);
   const designPath = findDocument(root, DESIGN_NAMES);
-  const product = productPath ? readFileSync(productPath, "utf8") : null;
-  const design = designPath ? readFileSync(designPath, "utf8") : null;
+  const product = readDocument(root, productPath);
+  const design = readDocument(root, designPath);
   return {
     hasProduct: !!product?.trim(), product, productPath: productPath ? relative(root, productPath) : null,
     hasDesign: !!design?.trim(), design, designPath: designPath ? relative(root, designPath) : null,
