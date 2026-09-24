@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reviewAndGate, validateRegistry } from "../src/gate.js";
 import { scanAntipatterns } from "../src/detect.js";
+import { validateConfigFiles } from "../src/scope.js";
 
 const roots: string[] = [];
 function root(): string {
@@ -34,6 +35,14 @@ describe("bundled detector integration", () => {
     const cwd = root(); mkdirSync(join(cwd, ".designer-skill"));
     writeFileSync(join(cwd, ".designer-skill/config.json"), "{not json");
     await expect(scanAntipatterns(".", { cwd })).rejects.toMatchObject({ code: "CONFIG_INVALID" });
+  });
+  it("validates config reached through a symlinked project root", () => {
+    const real = root(), linked = join(root(), "linked"); symlinkSync(real, linked);
+    mkdirSync(join(real, ".designer-skill"));
+    writeFileSync(join(real, ".designer-skill/config.json"), "{}");
+    expect(() => validateConfigFiles(linked)).not.toThrow();
+    writeFileSync(join(real, ".designer-skill/config.json"), "{not json");
+    expect(() => validateConfigFiles(linked)).toThrow(expect.objectContaining({ code: "CONFIG_INVALID" }));
   });
   it("rejects external targets and symlink escapes", async () => {
     const cwd = root(), outside = root(); writeFileSync(join(outside, "private.css"), "body {}");

@@ -98,7 +98,9 @@ export function selectScanFiles(
 }
 
 /** The legacy engine ignores malformed JSON. A verification call must not. */
-export function validateConfigFiles(root: string): void {
+export function validateConfigFiles(cwd: string): void {
+  // Config paths are compared after realpath, so the root must be canonical too.
+  const root = projectRoot(cwd);
   for (const name of ["config.json", "config.local.json"]) {
     const path = resolve(root, ".designer-skill", name);
     if (!existsSync(path)) continue;
