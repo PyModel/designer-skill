@@ -42,6 +42,12 @@ export function parseCli(argv: string[]): CliCommand {
   const rawPort = values.port ?? process.env.PORT ?? "3017";
   const port = parsePort(rawPort);
   if (port === null) return { kind: "error", message: `Invalid port "${rawPort}": expected an integer from 0 to 65535.` };
+  const allowedHosts = values["allowed-host"] ?? [];
+  const badHost = allowedHosts.find((h) => hostnameOf(h) !== h);
+  if (badHost !== undefined) {
+    // The SDK compares the Host header's parsed hostname exactly: a port or upper case never matches.
+    return { kind: "error", message: `Invalid --allowed-host "${badHost}": expected a lowercase hostname without a port.` };
+  }
   const envRoots = (process.env.DESIGNER_SKILL_ROOTS ?? "").split(",").map((r) => r.trim()).filter(Boolean);
   return {
     kind: "run",
@@ -49,9 +55,13 @@ export function parseCli(argv: string[]): CliCommand {
     port,
     host: values.host ?? "127.0.0.1",
     roots: [...(values.root ?? []), ...envRoots],
-    allowedHosts: values["allowed-host"] ?? [],
+    allowedHosts,
     notifyUpdates: !values["no-update-notifier"],
   };
+}
+
+function hostnameOf(value: string): string | null {
+  try { return new URL(`http://${value}`).hostname; } catch { return null; }
 }
 
 export const HELP_TEXT = `designer-skill-mcp — plug-and-play MCP for UI design superpowers
@@ -67,7 +77,7 @@ Flags:
   --port <n>, --port=<n> HTTP port (default 3017, or PORT)
   --host <addr>          HTTP bind address (default 127.0.0.1). Any non-loopback address
                          requires DESIGNER_SKILL_HTTP_TOKEN and at least one --root.
-  --allowed-host <name>  Host header allowed for a non-loopback bind (repeatable)
+  --allowed-host <name>  Hostname (no port) allowed in the Host header of a non-loopback bind (repeatable)
   --version, -v          Print version and exit
   --check-update         Check npm for a newer release and exit
   --no-update-notifier   Skip update checks (also NO_UPDATE_NOTIFIER=1)

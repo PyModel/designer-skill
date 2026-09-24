@@ -1,189 +1,102 @@
 # Ship Better UI from Pythinker: A Beginner's Guide to the designer-skill MCP
 
-> **Audience:** Pythinker users (any skill level) who want their coding agent to produce UI that doesn't look like every other AI-generated site.
-> **Read time:** ~20 minutes. **Build time:** ~10 minutes.
-> **What you'll have at the end:** A MCP server that hands Pythinker a production-grade design vocabulary, ready to invoke from a chat.
-
-
-> **Update (v0.18):** this guide was written for the original four-tool server. The server now exposes 14 tools, and the ship gate is `review_and_gate` (a static per-rule gate); `anti_slop_checklist` is advisory guidance. See the [README](../../README.md#tools) for the current tool list.
+> **Audience:** Pythinker users at any skill level who want their coding agent to build UI that doesn't look like every other AI-generated site.
+> **Build time:** about 10 minutes.
+> **What you'll have at the end:** the designer-skill MCP server connected to Pythinker, and a clear picture of what it checks and what it doesn't.
 
 ---
 
 ## Table of contents
 
 1. [Why this guide exists](#why-this-guide-exists)
-2. [What "designer-skill" actually is (and what it isn't)](#what-designer-skill-actually-is-and-what-it-isnt)
-3. [A 60-second primer on MCP](#a-60-second-primer-on-mcp)
+2. [What designer-skill is](#what-designer-skill-is)
+3. [MCP in one minute](#mcp-in-one-minute)
 4. [Prerequisites](#prerequisites)
-5. [Method 1 — the one-liner (recommended)](#method-1--the-one-liner-recommended)
-6. [Method 2 — edit `mcp.json` by hand](#method-2--edit-mcpjson-by-hand)
-7. [Method 3 — install the package locally (for the curious)](#method-3--install-the-package-locally-for-the-curious)
-8. [Verify the server is wired up](#verify-the-server-is-wired-up)
-9. [Invoke the skill from Pythinker](#invoke-the-skill-from-pythinker)
-10. [Walkthrough — ask Pythinker to design a pricing page](#walkthrough--ask-pythinker-to-design-a-pricing-page)
-11. [The four tools, explained like you're five](#the-four-tools-explained-like-youre-five)
-12. [The reference files — when to open which](#the-reference-files--when-to-open-which)
-13. [Troubleshooting](#troubleshooting)
-14. [FAQ](#faq)
-15. [What's next](#whats-next)
+5. [Install with one command](#install-with-one-command)
+6. [Or edit mcp.json by hand](#or-edit-mcpjson-by-hand)
+7. [Verify the connection](#verify-the-connection)
+8. [The recommended flow](#the-recommended-flow)
+9. [Walkthrough: a pricing page](#walkthrough-a-pricing-page)
+10. [What the ship gate does and doesn't check](#what-the-ship-gate-does-and-doesnt-check)
+11. [All 14 tools](#all-14-tools)
+12. [Troubleshooting](#troubleshooting)
+13. [FAQ](#faq)
 
 ---
 
 ## Why this guide exists
 
-If you've used a coding agent to build a landing page, dashboard, or marketing site in the last year, you've probably seen this output:
+Ask a coding agent for a landing page and you often get the same thing: three identical feature cards, a purple-to-blue gradient hero, and copy full of words like *seamless* and *empower*. The designer-skill repo calls this **AI slop**: the average output, recognizable as machine-made at a glance.
 
-- Three identical feature cards in a row.
-- Inter or Roboto everywhere, with a serif display font italicized above.
-- A "purple-to-blue AI gradient" hero.
-- Buzzwords like *seamless*, *empower*, *next-generation*.
-- An em-dash (—) in every other sentence.
+**designer-skill** gives your agent a design vocabulary to do better, and a static check to catch a few concrete defects before it says "done". This guide covers connecting it to Pythinker, the order to call the tools in, and how to read the results.
 
-This is what the designer-skill repo calls **AI slop**: the average output that a viewer can spot as "AI-made" in under a second. The average used to be a passing grade. After 2024, it's a death sentence — every SaaS page looks the same because every coding model is reaching for the same training-data defaults.
-
-**designer-skill** is a composite design reference that fixes exactly that problem. It codifies a production-grade design vocabulary into ten reference files (typography, aesthetics, motion, engineering, anti-slop discipline, refactoring, interaction design, visual critique, design systems, and a verb-driven command playbook) and exposes them to any MCP-compatible coding agent — including **Pythinker**.
-
-This guide is the beginner's walkthrough: how to connect designer-skill to your Pythinker CLI, how to invoke it, and how to interpret what comes back.
-
-> **TL;DR.** Run one command (`pythinker mcp add --transport stdio designer-skill -- npx -y @pymodel/designer-skill-mcp`), restart Pythinker, and your agent now has a router to ten expert design references. You can ask it to design, audit, refactor, polish, or harden any UI with the same vocabulary a senior design engineer would use.
+> **TL;DR.** Run `pythinker mcp add --transport stdio designer-skill -- npx -y @pymodel/designer-skill-mcp`, restart Pythinker, then ask for UI work in plain language. The agent calls `get_preflight_brief` first and `review_and_gate` on the changed files last.
 
 ---
 
-## What "designer-skill" actually is (and what it isn't)
+## What designer-skill is
 
-Let's clear up a common misconception: **designer-skill is not a "design tool"** in the Figma / Sketch / Penpot sense. It doesn't generate images, draw layouts, or render components on a canvas.
+It is **not** a design tool like Figma. It doesn't draw layouts or render components.
 
-It is a **structured markdown reference** — a corpus of opinionated design rules, written in plain prose, that a coding agent reads before it touches your UI code. Think of it as:
+It is a set of **markdown references** plus a small **static detector**, served over MCP:
 
-> A senior design engineer sitting on the agent's shoulder, whispering "no, don't use Inter here" and "stop with the three equal cards" and "you forgot the empty state."
+- **A router** (`SKILL.md`) that sets the working rules: stay in the scope the user asked for, preserve the product's existing identity unless told otherwise, and never invent test results.
+- **41 references**: 15 designer references (typography, color, motion, engineering, anti-slop, redesign, design systems and more) and 26 `ux/*` references (forms, accessibility, navigation, i18n and others).
+- **A 44-rule detector** that scans your files for concrete problems such as low text contrast or broken images.
 
-The reference is split into:
+It is framework-agnostic. React, Vue, Svelte, plain HTML and Tailwind all work, because the references describe principles, not syntax.
 
-- **One router file** (`SKILL.md`) — short on purpose. It's a table of contents and a preflight checklist.
-- **Ten reference files** in `reference/` — each one owns a single concern (type, color, motion, etc.) so the agent reads the right one and nothing else.
-
-When the MCP server is running, the agent can:
-
-1. **Read the router** to know what to do first (preflight, ship gate, routing map).
-2. **Read a reference** on demand when it needs concrete values (a type scale, an easing curve, a palette).
-3. **Map a vague request to concrete actions** ("make it pop" → read `aesthetic-systems` + `avoid-ai-slop`).
-
-The skill is **framework-agnostic** — it doesn't care if you're writing React, Vue, Svelte, plain HTML, or Tailwind. It cares about *principles*, not syntax.
+One thing to know up front: the style guidance is **advisory**. The skill states there is no universal ban on any font, color, layout or punctuation mark. Your product's own identity and your instructions come first.
 
 ---
 
-## A 60-second primer on MCP
+## MCP in one minute
 
-If you already know MCP, skip ahead to [Prerequisites](#prerequisites). If you don't, this is the 90-second version.
+**MCP** (Model Context Protocol) lets a coding agent talk to external tool servers. An MCP server can offer:
 
-**MCP** stands for **Model Context Protocol**. It's a JSON-RPC-based protocol that lets a coding agent talk to *external* tool servers. Instead of writing a custom integration for every tool, an agent implements the MCP client once, and any tool that speaks MCP plugs in.
+| Thing | What it is |
+|---|---|
+| **Tools** | Functions the agent can call with arguments |
+| **Resources** | Read-only content the agent can fetch |
+| **Prompts** | Prompt templates you can start a task from |
 
-Concretely, an MCP server can expose three things to an agent:
+designer-skill offers **14 tools**, two resources (`designer://skill` and `designer://reference/{+name}`) and one prompt (`design`, with a `task` and an optional `aesthetic`).
 
-| Thing | What it is | Analogy |
-|---|---|---|
-| **Tools** | Functions the agent can call (with structured arguments) | "Add a row to a spreadsheet" |
-| **Resources** | Read-only content the agent can fetch (markdown, files, schemas) | "Read the docs page" |
-| **Prompts** | Pre-built prompt templates the user can invoke | "Run the code-review command" |
-
-designer-skill's MCP server exposes all three:
-
-- **4 tools** (`get_design_system`, `get_reference`, `dispatch_intent`, `anti_slop_checklist`)
-- **2 resources** (`designer://skill` and `designer://reference/{name}`)
-- **1 prompt** (`design`)
-
-When you tell Pythinker to "use the designer-skill to redesign this page," the agent will internally:
-
-1. Call `get_design_system` to load the router.
-2. Call `dispatch_intent` with your request — this returns the verb(s) and which reference files to read.
-3. Call `get_reference` once or twice to load the right expert content.
-4. Use that content to drive its design decisions.
-
-You don't have to call any of this yourself. The agent does it. You just see the result.
+You don't call any of this yourself. You describe the UI work, and Pythinker calls the tools.
 
 ---
 
 ## Prerequisites
 
-You'll need three things:
+1. **Pythinker CLI v0.38.0 or later.** Check with `pythinker --version`. Install from [PyModel/pythinker-code](https://pymodel.github.io/pythinker-code/) or with `brew install pymodel/tap/pythinker`.
+2. **Node.js 22 or later.** The server runs through `npx`, and the package requires Node `>=22`. Check with `node --version`.
+3. **An internet connection** the first time, so `npx` can fetch the package from npm. After that it comes from the npm cache.
 
-1. **Pythinker CLI v0.38.0 or later.** Check with:
-   ```bash
-   pythinker --version
-   ```
-   If you don't have it, install it from [PyModel/pythinker-code](https://pymodel.github.io/pythinker-code/) or via Homebrew:
-   ```bash
-   brew install pymodel/tap/pythinker
-   ```
-
-2. **Node.js 18 or later** (only required because `designer-skill-mcp` runs over `npx`). Check with:
-   ```bash
-   node --version
-   ```
-   On macOS with Homebrew: `brew install node@20`.
-
-3. **An internet connection** for the first run (it will `npx -y @pymodel/designer-skill-mcp` and fetch the package from npm). After that, the package is cached locally.
-
-No API key required — all four tools serve markdown from the bundled skill files.
+**No API key.** The core tools read bundled files and scan your local project. Two optional tools (`find_ui_references`, `get_design_reference`) search the niblet.com screen catalogue and need a `NIBLET_TOKEN`; without it they return setup instructions instead of results.
 
 ---
 
-## Method 1 — the one-liner (recommended)
-
-Pythinker's MCP subsystem is managed by the `pythinker mcp` command group. Adding a new stdio server is one line:
+## Install with one command
 
 ```bash
 pythinker mcp add --transport stdio designer-skill -- npx -y @pymodel/designer-skill-mcp
 ```
 
-Let's break that command down so you understand what it does:
-
 | Part | Meaning |
 |---|---|
-| `pythinker mcp add` | Subcommand: add an MCP server entry. |
-| `--transport stdio` | The server will be launched as a child process; Pythinker talks to it over stdin/stdout. |
-| `designer-skill` | The name Pythinker will use to refer to this server. Tools get prefixed with `mcp_designer-skill_*`. |
-| `--` | Separator: everything after this is the actual command Pythinker will run. |
-| `npx -y @pymodel/designer-skill-mcp` | `npx` downloads and runs the package; `-y` auto-confirms the install prompt. |
+| `pythinker mcp add` | Add an MCP server entry |
+| `--transport stdio` | Pythinker starts the server as a child process and talks to it over stdin/stdout |
+| `designer-skill` | The name Pythinker uses for this server. Its tools appear as `mcp_designer-skill_*` |
+| `--` | Everything after this is the command Pythinker runs |
+| `npx -y @pymodel/designer-skill-mcp` | Download and run the package; `-y` skips the install prompt |
 
-After running it, you should see something like:
-
-```
-Added MCP server 'designer-skill' to /Users/you/.pythinker/mcp.json
-```
-
-Confirm with:
-
-```bash
-pythinker mcp list
-```
-
-Expected output (your other servers will be listed too):
-
-```
-MCP config file: /Users/you/.pythinker/mcp.json
-  designer-skill (stdio): npx -y @pymodel/designer-skill-mcp
-```
-
-Restart Pythinker (or run `/mcp reconnect` inside the TUI) to load the new server.
-
-> **Why this is the recommended path:** the CLI handles JSON formatting, path resolution, transport detection, and schema validation. You can't typo a closing brace.
+The entry is written to `~/.pythinker/mcp.json`. Confirm it with `pythinker mcp list`, then restart Pythinker (or run `/mcp reconnect` inside the TUI).
 
 ---
 
-## Method 2 — edit `mcp.json` by hand
+## Or edit mcp.json by hand
 
-If you prefer to see what's actually on disk (good for debugging and for storing your config in dotfiles), edit `~/.pythinker/mcp.json` directly.
-
-> **Note:** Pythinker v0.38.0+ stores MCP servers in `~/.pythinker/mcp.json`. Confirm with `pythinker mcp list`, which prints the path. Older v2.x builds used a different schema under `~/.pythinker/config.json`.
-
-Open the file:
-
-```bash
-$EDITOR ~/.pythinker/mcp.json
-```
-
-It should look like this when you're done (yours may already have other servers like `tavily` or `context7`):
+Useful if you keep your config in dotfiles. Open `~/.pythinker/mcp.json` (run `pythinker mcp list` if you're unsure of the path) and add:
 
 ```json
 {
@@ -196,319 +109,185 @@ It should look like this when you're done (yours may already have other servers 
 }
 ```
 
-No `env` block needed. Save, then restart Pythinker or run `/mcp reconnect` inside the TUI.
+No `env` block is needed. Save, then restart Pythinker or run `/mcp reconnect`.
 
-**Top-level keys, in plain English:**
+- `designer-skill` is the friendly name; pick anything.
+- `command` and `args` are what Pythinker runs.
+- `env` (optional) adds environment variables, e.g. `NIBLET_TOKEN` if you use the optional catalogue tools.
+- `toolTimeout` (optional) is the per-call timeout in seconds.
+- `enabledTools` (optional) limits which tools are registered; `["*"]` registers all of them.
 
-- `mcpServers` — Pythinker's required key. The `mcpServers` (camelCase) is an alias; the underlying Python field is `mcp_servers`. Both work, but the CLI emits camelCase by default.
-- `designer-skill` — the friendly name. Pick anything; it shows up in tool names as `mcp_<name>_*`.
-- `command` — the executable Pythinker will spawn. Here, `npx`.
-- `args` — the argument list passed to `command`. Same as you'd type on the command line.
-- `env` (optional) — extra environment variables merged into the child process's environment.
-- `url` (not used here) — for HTTP transports, you'd set a `url` instead of `command`/`args`.
-- `headers` (not used here) — for HTTP transports, custom headers (e.g. `Authorization`).
-- `toolTimeout` (optional) — per-call timeout in seconds (default 30).
-- `enabledTools` (optional) — whitelist of tool names to register; `["*"]` (the default) registers everything.
+**Pin a version:** replace the package with `@pymodel/designer-skill-mcp@0.18.1` so the server doesn't change under you.
+
+**Run from a local checkout:** clone [PyModel/designer-skill](https://github.com/PyModel/designer-skill), run `npm ci && npm run build` inside `designer-skill-mcp/`, then set `"command": "node"` and `"args": ["/abs/path/to/designer-skill-mcp/dist/index.js"]`.
 
 ---
 
-## Method 3 — install the package locally (for the curious)
+## Verify the connection
 
-The default `npx` approach downloads `@pymodel/designer-skill-mcp` from npm on every cold cache. That's fine for most people, but if you want to:
+1. **Is it configured?** `pythinker mcp list` should show `designer-skill` with its command.
+2. **Does it start?** `pythinker mcp test designer-skill` starts the server and lists its tools. You should see all 14, including `get_preflight_brief`, `dispatch_intent` and `review_and_gate`.
+3. **Is it loaded in your session?** Inside the TUI, `/mcp` lists connected servers and `/tools` should show names starting with `mcp_designer-skill_`.
 
-- Pin a specific version
-- Audit the source
-- Run it offline
-- Tinker with the skill files
-
-…you can install it locally and point Pythinker at the absolute path.
-
-```bash
-# In any project, or in a tools dir you keep around:
-mkdir -p ~/.local/share/designer-skill-mcp
-cd ~/.local/share/designer-skill-mcp
-npm init -y
-npm install @pymodel/designer-skill-mcp
-npm run build   # syncs the designer-skill/ files and compiles TypeScript
-```
-
-Then in `~/.pythinker/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "designer-skill": {
-      "command": "node",
-      "args": ["/Users/you/.local/share/designer-skill-mcp/node_modules/@pymodel/designer-skill-mcp/dist/index.js"]
-    }
-  }
-}
-```
-
-> **The `npm run build` step is important.** It copies the canonical `designer-skill/` markdown content (the SKILL.md router and the ten reference files) into `assets/skill/` so the published package is self-contained.
-
-You can also clone the [GitHub repo](https://github.com/PyModel/designer-skill) and build from source if you want to read the source first.
+If any step fails, see [Troubleshooting](#troubleshooting).
 
 ---
 
-## Verify the server is wired up
+## The recommended flow
 
-Three checks, in order of increasing depth.
+Five steps, in this order:
 
-### 1. CLI check — does Pythinker know about it?
+1. **`get_preflight_brief`** first. It returns a short checklist: establish scope, load project context, route the request, make the smallest authorized change, gate it, and report honestly. Right after it, the brief tells the agent to call `load_project_context` with the absolute project root so it reads your `PRODUCT.md` and `DESIGN.md` if you have them.
+2. **`dispatch_intent`** with the request. It maps plain language ("make it pop", "it looks AI-made") to design verbs and recommends **at most four** references to read.
+3. **`get_reference`** for each recommended reference, and only those.
+4. **Build** the change.
+5. **`review_and_gate`** on the changed files, with an **absolute** `cwd`. If it reports `FAIL`, fix and run it again.
 
-```bash
-pythinker mcp list
-```
+Some phrases and where `dispatch_intent` sends them (from the current registry):
 
-You should see `designer-skill` with its transport and command.
+| You say | Verbs | Recommended reads |
+|---|---|---|
+| "make it pop" | `amplify` | `aesthetic-systems`, `differentiation-playbook` |
+| "it looks AI-made" | `review` | `visual-critique`, `design-principles`, `avoid-ai-slop`, `ux/01-core-principles` |
+| "harden this form for long input and missing data" | `form`, `ship` | `interaction-design`, `engineering-and-performance`, `ux/07-forms-and-inputs`, `css-techniques` |
 
-### 2. Connection test — can Pythinker actually reach the server?
+When nothing matches, it falls back to `command-playbook` and `design-principles` and tells the agent to inspect the request before acting.
 
-```bash
-pythinker mcp test designer-skill
-```
-
-This spins up the server, calls `tools/list`, prints the names, and exits. You should see the four tools: `anti_slop_checklist`, `dispatch_intent`, `get_design_system`, `get_reference`.
-
-> If you see an error, jump to [Troubleshooting](#troubleshooting).
-
-### 3. In-TUI check — is the server loaded into the active session?
-
-Inside `pythinker tui` (or whatever TUI/REPL you use), type:
-
-```
-/mcp
-```
-
-You'll see a list of connected servers. `designer-skill` should be there. The `/mcp` command also has a `reconnect` subcommand for hot-reloading after config changes.
-
-You can also list Pythinker's known tools:
-
-```
-/tools
-```
-
-You should see tool names starting with `mcp_designer-skill_` (e.g. `mcp_designer-skill_get_design_system`).
+You can also name a verb directly ("run the `check` verb on the homepage"). The canonical verbs are: `setup`, `plan`, `build`, `preview`, `spec`, `check`, `review`, `finish`, `layout`, `type`, `color`, `motion`, `responsive`, `simplify`, `copy`, `onboard`, `ship`, `speed`, `tokens`, `brand`, `refresh`, `options`, `amplify`, `calm`, `push`, `delight`, `form`, `nav`, `states`, `tone`, `system`, `css`. The agent can list them with `list_commands` and get help for one with `get_command`.
 
 ---
 
-## Invoke the skill from Pythinker
-
-Once the server is connected, you don't need any special command — just ask Pythinker to design something, in natural language. The agent will discover the tools and call them on its own.
-
-**Vague request, mapped by the agent:**
-
-```
-You:  "Can you make my pricing page look less generic?"
-Pythinker:  calls dispatch_intent("make my pricing page look less generic")
-            → verb: bolder · colorize
-            → reads: aesthetic-systems, design-principles, avoid-ai-slop
-            → applies the rules
-```
-
-**Explicit intent:**
-
-```
-You:  "Use the designer-skill to audit the homepage for accessibility and
-       AI-slop tells. Don't change anything — just report findings."
-Pythinker:  calls anti_slop_checklist + get_reference("engineering-and-performance")
-```
-
-**Force a specific verb:**
-
-```
-You:  "Run the harden verb from the designer-skill playbook on this form.
-       I need it to survive long input, RTL, and missing data."
-Pythinker:  calls get_reference("command-playbook") to confirm the verb
-            then get_reference("engineering-and-performance")
-```
-
-The verb vocabulary you'll see in `command-playbook` is a useful shorthand: `build`, `shape`, `audit`, `critique`, `polish`, `bolder`, `quieter`, `overdrive`, `animate`, `delight`, `layout`, `typeset`, `colorize`, `harden`, `optimize`, `distill`, `extract`, `brand`, `adapt`, `redesign`. Use any of them.
-
----
-
-## Walkthrough — ask Pythinker to design a pricing page
-
-Let's run a full design task end-to-end. The goal is for you to see the round-trip, not just the setup.
+## Walkthrough: a pricing page
 
 ### The prompt
 
 ```
-Use the designer-skill to design a pricing page for an analytics SaaS
-called "Loopgate." Three tiers (Free / Team / Enterprise), monthly
-and annual toggle, a comparison table, and an FAQ. Brand voice:
-data-forward, opinionated, no buzzwords. Aesthetic: minimalist
-editorial. Make it production-ready — every state, real copy, no
-placeholder images.
+Use designer-skill to build a pricing page for an analytics SaaS called
+"Loopgate": three tiers, a monthly/annual toggle, a comparison table and
+an FAQ. Voice: data-forward, no buzzwords. Write it to site/pricing.html.
 ```
 
-### What happens inside the agent
+### What the agent does
 
-A high-level trace (paraphrased — your real run will be longer):
+1. Calls `get_preflight_brief`, then `load_project_context` with your project root.
+2. Calls `dispatch_intent`. For "build a pricing page" the registry returns the `build` verb and recommends `craft-flow`, `engineering-and-performance`, `design-principles` and `differentiation-playbook`.
+3. Calls `get_reference` for those four.
+4. Writes `site/pricing.html`.
+5. Calls `review_and_gate` with `target: "site/pricing.html"` and `cwd` set to the absolute project root.
 
-1. **Pre-flight** — Pythinker calls `get_design_system` to load the SKILL.md router. The router tells it: scope the surface (it's a brand surface — distinctiveness is the bar), commit to one aesthetic, run the category-reflex check, build on the baseline.
-2. **Intent dispatch** — Pythinker calls `dispatch_intent("design a pricing page for an analytics SaaS")` and gets back: verbs `build`, `harden`; reads `design-principles`, `aesthetic-systems`, `engineering-and-performance`, `avoid-ai-slop`.
-3. **Load expert content** — Pythinker calls `get_reference("aesthetic-systems")`, `get_reference("avoid-ai-slop")`, etc. — typically 2-3 reference files in parallel.
-4. **Apply rules** — the agent uses the loaded content as constraints. E.g. the `avoid-ai-slop` reference bans three-equal-cards, gradient text, em-dashes, and Inter — so the agent picks a more deliberate type pairing and writes copy without any of those tells.
-5. **Ship-gate audit** — before delivering, the agent runs `anti_slop_checklist` mentally and confirms every item is satisfied.
+### Reading the gate result
 
-### What you see in the TUI
-
-You'll watch Pythinker call the MCP tools (visible in some TUIs as tool-call blocks), then return:
-
-- A full pricing page (HTML, JSX, or your framework of choice).
-- A brief note on which aesthetic system it committed to and why.
-- A summary of the anti-slop checks it ran.
-
-If the result *feels* off — say it went too safe, or you wanted it bolder — push back:
+Here is real output from `review_and_gate` on a one-file page whose muted caption was `#bbb` on white:
 
 ```
-It's a bit safe. Run the "bolder" verb — bigger scale jumps, more
-weight contrast, one color owning the surface.
+## review_and_gate: FAIL
+
+Static check: FAIL (STATIC_FINDINGS). UI readiness: FAIL.
+Scanned 1 of 1 candidate files (filesystem listing); ignored 0; skipped 0 symlink/special/unreadable entries.
+1 blocking and 0 advisory findings.
+Required rules: broken-image RAN on 1 file(s); low-contrast RAN on 1 file(s); clipped-overflow-container RAN on 1 file(s).
+Rendered checks NOT_RUN: text-overflow; functional, accessibility and performance checks must be reported separately.
+
+[low-contrast] pricing.html:3: 1.9:1 (need 4.5:1) — text #bbbbbb on #ffffff
 ```
 
-The agent will re-read `aesthetic-systems`, push the contrast, and rerun the ship gate.
+After changing the color to `#555` and running it again:
+
+```
+## review_and_gate: NOT_VERIFIED
+
+Static check: PASS (ADDITIONAL_VERIFICATION_REQUIRED). UI readiness: NOT_VERIFIED.
+```
+
+Note the second result. The static check **passed**, but the overall status is `NOT_VERIFIED`, not PASS. That's by design, and the next section explains why.
+
+If the design feels too safe, push back in plain language: "It's a bit safe. Make it bolder." That routes to `amplify`, the agent reads the new references, edits, and gates again.
 
 ---
 
-## The four tools, explained like you're five
+## What the ship gate does and doesn't check
 
-| Tool | What it returns | When the agent should call it |
-|---|---|---|
-| `get_design_system` | The `SKILL.md` router — preflight, precedence rule, routing map, ship gate. | **Always first.** This is the entry point. |
-| `get_reference` | The full text of one of the ten reference files (e.g. `aesthetic-systems`). | When the agent needs concrete values: a type scale, an easing curve, a palette. |
-| `dispatch_intent` | Maps a natural-language request ("make it pop", "the spacing feels off") to a verb + the files to read. | When the user's request is vague and the agent isn't sure where to start. |
-| `anti_slop_checklist` | The full anti-AI-slop reference — tells, category-reflex checks, output-completeness contract. | **Always last.** The ship gate. Run before declaring done. |
+`review_and_gate` is the ship gate. It is **static only**: it reads your source files and never opens a browser.
 
-If you only memorize one thing: **get_design_system first, anti_slop_checklist last, dispatch_intent when in doubt, get_reference when you need concrete values.**
+**What it checks.** Three required rules run on every scanned file: `broken-image`, `low-contrast` and `clipped-overflow-container`. You can make more of the 44 detector rules blocking with the `blockingRules` argument. For each required rule it reports one status:
+
+| Rule status | Meaning |
+|---|---|
+| `RAN` | The rule was evaluated on every scanned file |
+| `UNSUPPORTED` | The file type can't express it statically (e.g. contrast in a CSS-only or TSX file) |
+| `UNRESOLVED` | It applies but couldn't be evaluated (e.g. a remote stylesheet or a `var()` with no value) |
+| `WAIVED` | Turned off in the committed `.designer-skill/config.json` |
+
+**How to read the result** (gate `schemaVersion: 3`):
+
+- `staticStatus` is `PASS`, `FAIL` or `INCOMPLETE`. `INCOMPLETE` means a required rule couldn't run. Treat it as unfinished, not as a pass.
+- The overall `status` is only ever `FAIL` or `NOT_VERIFIED`. It never returns PASS.
+- An empty scan, or one where every required rule is waived, fails with `NO_SCAN_COVERAGE`.
+- The `checks` list always reports `rendered` (with `text-overflow`), `functional`, `accessibility` and `performance` as `NOT_RUN`.
+
+**What it doesn't do.** It never certifies that your UI is ready. Rendering, keyboard and focus behavior, responsive layout and real accessibility testing belong to your own test harness or a manual check. Full contract: [`docs/HARDENING.md`](../HARDENING.md).
+
+**What about `anti_slop_checklist`?** It returns the `avoid-ai-slop` reference: advisory style and truthful-content guidance. It's useful for a review, but it doesn't check anything and it isn't the gate.
 
 ---
 
-## The reference files — when to open which
+## All 14 tools
 
-Each file owns one concern. Don't read all ten for every task — that's wasteful. Read the one(s) the dispatched verb points to.
+| Tool | Purpose |
+|---|---|
+| `get_preflight_brief` | Scope and verification contract (call first) |
+| `load_project_context` | Read PRODUCT.md / DESIGN.md from the project (absolute `cwd`) |
+| `get_design_system` | SKILL.md router and reference map |
+| `get_reference` | One of 41 references by name (designer or `ux/*`) |
+| `anti_slop_checklist` | Advisory style and truthful-content review guidance |
+| `list_commands` | All design verbs with descriptions |
+| `get_command` | Help and reference names for one verb |
+| `dispatch_intent` | Map a request → verb(s) + at most four references to read |
+| `commit_design_direction` | Validate a context-grounded direction record |
+| `get_palette_seed` | OKLCH brand seed for authorized new palette work |
+| `detect_antipatterns` | Deterministic static scan (44 rules): coverage, file hashes, gaps |
+| `review_and_gate` | Static gate per required rule; never claims rendered readiness |
+| `find_ui_references` | Optional niblet real-screen search (`NIBLET_TOKEN`) |
+| `get_design_reference` | Optional niblet structured reference (`NIBLET_TOKEN`) |
 
-| File | What it owns | When to read |
-|---|---|---|
-| `design-principles.md` | Aesthetic-neutral baseline: typography ramp, spacing scale (4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 / 96), color & contrast, layout & grid, hierarchy, depth. | Always — the neutral default. `layout`, `typeset`, `colorize`, `distill` verbs. |
-| `aesthetic-systems.md` | Five opinionated design languages: Minimalist, Brutalist, Soft, High-end, Brand-identity. Concrete palettes, fonts, shadow tokens. | `bolder`, `quieter`, `brand`, `colorize`. Pick one system per surface. |
-| `motion-and-interaction.md` | Easing curves, durations, springs, micro-interactions, scroll, reduced-motion. | `animate`, `delight`, `overdrive`. |
-| `engineering-and-performance.md` | Component architecture, design tokens, hardware acceleration, responsive/fluid, a11y, Core Web Vitals, real-data hardening. | `build`, `polish`, `harden`, `optimize`, `adapt`, `extract`. |
-| `avoid-ai-slop.md` | Tell ban-list, category-reflex checks, output-completeness contract, ship-gate checklist. | **Always at the end.** The always-run gate. |
-| `refactor-and-redesign.md` | Audit, diagnose generic patterns, the redesign loop, image/reference-to-code. | `redesign`, `adapt`, `audit`. |
-| `command-playbook.md` | Intent→verb dispatch table. 20+ verbs, what they do, which files to read. | When the user's intent is ambiguous. |
-| `interaction-design.md` | Cognitive laws, state machines, forms, navigation, error UX, loading states. | `form`, `navigate`, `states`, `feel` verbs. |
-| `visual-critique.md` | Seven-dimension critique instrument. | `score`, `critique` verbs. |
-| `design-systems.md` | Token architecture, component specs, theming. | `system`, `extract` verbs. |
-
-### The precedence rule (read this once, internalize it)
-
-`design-principles.md` is the **aesthetic-neutral baseline**. It's the default lean. The moment you commit to an aesthetic system from `aesthetic-systems.md`, that system's rules **override** the baseline within its own surface.
-
-Example: pure white is discouraged by default, but it's the **required** canvas for the Minimalist system. Blanket shadows are a "cheap default" by the baseline, but the **Soft** system requires diffused ambient shadows.
-
-Don't mix two systems' signatures on one surface. Pick one, read its file, follow it.
-
-### Cross-file ownership (don't re-derive, read the owner)
-
-Each fact has one home. If a fact appears in two files, the more specific one wins:
-
-- Concrete palettes, fonts, shadow tokens, per-system rules → `aesthetic-systems.md`
-- Contrast ratios, type ramp, spacing scale, layout model → `design-principles.md`
-- Easing curves, durations, spring config → `motion-and-interaction.md`
-- GPU/hardware-accel, `will-change`, tokens, responsive, a11y engineering, CWV → `engineering-and-performance.md`
+This table matches the one in the [README](../../README.md#tools).
 
 ---
 
 ## Troubleshooting
 
-### "Pythinker doesn't see the new server"
+**Pythinker doesn't see the server.** Restart the TUI or run `/mcp reconnect`. Check the config path with `pythinker mcp list`, and validate the JSON with `jq . ~/.pythinker/mcp.json`. A stray comma is the usual culprit.
 
-1. **Did you restart?** Edit the config or run `pythinker mcp add`, then quit the TUI and relaunch. (Or use `/mcp reconnect` inside the TUI.)
-2. **Path:** confirm the file with `pythinker mcp list` — it prints the exact path.
-3. **JSON syntax:** run `cat ~/.pythinker/mcp.json | jq .` to validate. A stray comma is the #1 culprit.
+**`pythinker mcp test designer-skill` fails.** Run `npx -y @pymodel/designer-skill-mcp` directly to see the real error. Common causes: npm registry blocked by a proxy or firewall, Node older than 22, or an npm cache directory that isn't writable.
 
-### "Tools list is empty / `pythinker mcp test designer-skill` errors"
+**`review_and_gate` rejects `cwd`.** `cwd` must be an absolute path; a relative one fails input validation. It must also sit inside the project roots the server is allowed to read, or the call returns `SCOPE_VIOLATION`. Pass the absolute project root.
 
-Likely cause: the package can't be reached.
+**The gate says `NO_SCAN_COVERAGE`.** Nothing was scanned. Check that `target` points at the files you changed and that they aren't ignored by `.gitignore` or the project's config.
 
-```bash
-# Run the command manually to see the actual error:
-npx -y @pymodel/designer-skill-mcp
-```
+**The gate says `INCOMPLETE`.** A required rule couldn't run, often because the file is TSX or CSS-only, or a stylesheet couldn't be resolved. The summary line names the rule and an example file. Report it; don't count it as a pass.
 
-If that fails:
-- **Network blocked?** `npx` needs to hit the npm registry. Check your proxy / firewall.
-- **Node version too old?** `node --version` should be ≥ 22. The package's `engines.node` is `>=22`.
-- **Permission issue?** The `npm` cache directory needs to be writable.
+**The output still looks AI-made.** The skill guides the model; it doesn't guarantee taste. Name an aesthetic ("minimalist editorial") instead of "modern and clean", ask the agent to justify a direction before building, or split the work: layout first, then type, then color, then motion.
 
-### "I see `mcp_designer-skill_get_reference` but not the one I want"
-
-The agent picks tools by name. If the agent isn't calling a specific tool, it usually means the request didn't trigger it. Rephrase with an explicit verb from `command-playbook.md` (e.g. "use the polish verb", "run the audit verb").
-
-### "The output still looks AI-made"
-
-The skill is guidance, not a guarantee. Run the ship gate yourself:
-
-```
-You: "Run anti_slop_checklist on the code you just produced and fix every issue."
-```
-
-If it still fails, the issue is in the model, not the skill. Try:
-- A more deliberate prompt with a named aesthetic ("minimalist editorial", "brutalist data-dashboard") instead of "modern and clean".
-- Asking the agent to *first* pick the aesthetic and justify it, *then* build.
-- Breaking the work into smaller asks: layout first, typeset second, color third, motion last.
-
-### "Tools don't show up after editing config"
-
-Run `pythinker mcp list` to confirm the config path, validate JSON with `jq`, then restart Pythinker or `/mcp reconnect`.
-
-### "How do I disable it temporarily?"
-
-```bash
-pythinker mcp remove designer-skill
-```
-
-To re-enable: `pythinker mcp add --transport stdio designer-skill -- npx -y @pymodel/designer-skill-mcp`.
+**Turn it off.** `pythinker mcp remove designer-skill`. Re-add it with the install command above.
 
 ---
 
 ## FAQ
 
-**Q: Does this work with local models (Ollama, MLX, llama.cpp)?**
-A: Yes. All four tools are pure markdown served from the bundled skill — no external API calls.
+**Does it work with local models?**
+Yes. The core tools read bundled files and your local project, with no external API calls. Only the two optional niblet tools go online.
 
-**Q: Will it slow Pythinker down?**
-A: Negligibly. The MCP server stays idle until a tool is called. The first call to `get_design_system` loads the markdown from disk (a few hundred KB total) and caches it in memory. Subsequent calls are instant.
+**Does it change my files?**
+No. Every tool is read-only. Your agent makes the edits; designer-skill advises and checks.
 
-**Q: Can I use it with non-UI tasks?**
-A: It's a no-op for backend logic, data pipelines, or anything non-visual. The router's `description` frontmatter tells the agent to use it only for UI work. If you ask Pythinker to refactor a Python function, the agent will ignore the designer-skill tools.
+**Can I use it for non-UI work?**
+There's no point. The skill says not to activate for backend, database, CLI or other non-visual tasks.
 
-**Q: Is the skill just a prompt?**
-A: It's a structured set of ten markdown files plus a small router. There's no fine-tuned model inside the package. The skill is plain prose rules that the *host* model reads as context. This is what makes it work with any model.
+**Does a static PASS mean my page is ready to ship?**
+No. It means the required static rules ran and found nothing. Overall status stays `NOT_VERIFIED` until you run rendered, functional, accessibility and performance checks yourself.
 
-**Q: Can I edit the reference files?**
-A: Yes — they're just markdown. If you install the package locally (Method 3), edit the files under `assets/skill/reference/` and rebuild. The MCP server reads from the bundled copy, not the source. If you want a shared team fork, host your own version of the GitHub repo and point the `args` at a custom path.
-
-**Q: Does it work with React / Vue / Svelte / Astro / Next / Nuxt / Solid / Qwik / …?**
-A: Yes. The skill is framework-agnostic. It gives principles (e.g. "use a 4pt spacing scale, weight 900 vs 200 for hierarchy, an OKLCH color ramp"). The agent translates those into whatever framework you use.
-
-**Q: Can I trust the npm package?**
-A: The package is published as [`@pymodel/designer-skill-mcp`](https://www.npmjs.com/package/@pymodel/designer-skill-mcp) under the MIT license. The source is at [github.com/PyModel/designer-skill](https://github.com/PyModel/designer-skill).
-
----
-
-## What's next
-
-You now have a working designer-skill MCP server feeding Pythinker a production-grade design vocabulary. Some directions to take it from here:
-
-1. **Use it for a real refactor.** Pick a page that looks "AI-made" and ask Pythinker to redesign it without breaking functionality. The `refactor-and-redesign` reference walks through the audit → diagnose → redesign loop in detail.
-2. **Pick an aesthetic system and commit.** Read `aesthetic-systems.md`. Pick one of the five (Minimalist, Brutalist, Soft, High-end, Brand-identity). Apply it consistently to your whole product.
-3. **Run the ship gate on every PR.** Add a CI step that calls the agent with "audit this diff for AI-slop tells and accessibility issues." The agent will use `anti_slop_checklist` and `engineering-and-performance`.
-4. **Combine with your existing skills.** designer-skill complements other Pythinker skills. The `simplify-code` skill cleans up logic; designer-skill cleans up presentation. Use both.
-
-The skill's job is to make "AI-made" a phrase your users never say. Now go ship something that doesn't look like everyone else's site.
+**Is the package trustworthy?**
+It's published as [`@pymodel/designer-skill-mcp`](https://www.npmjs.com/package/@pymodel/designer-skill-mcp) under the MIT license, with source at [github.com/PyModel/designer-skill](https://github.com/PyModel/designer-skill).
 
 ---
 
@@ -516,6 +295,7 @@ The skill's job is to make "AI-made" a phrase your users never say. Now go ship 
 
 - designer-skill repo: <https://github.com/PyModel/designer-skill>
 - npm package: <https://www.npmjs.com/package/@pymodel/designer-skill-mcp>
+- Verification contract: [`docs/HARDENING.md`](../HARDENING.md)
 - Pythinker docs: <https://pymodel.github.io/pythinker-code/>
 - MCP spec: <https://modelcontextprotocol.io>
 

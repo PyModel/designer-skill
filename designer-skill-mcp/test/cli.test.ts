@@ -32,6 +32,13 @@ describe("parseCli", () => {
     expect(run("--http", "--port=4000", "--host=0.0.0.0", "--root=/srv/app", "--allowed-host=design.example")).toEqual(expected);
   });
 
+  it("rejects --allowed-host values the SDK's hostname match can never accept", () => {
+    for (const host of ["design.example:3017", "Design.Example", "http://design.example", "a b"]) {
+      expect(run("--allowed-host", host), host).toMatchObject({ kind: "error" });
+    }
+    expect(run("--allowed-host", "[::1]", "--allowed-host", "10.0.0.5")).toMatchObject({ allowedHosts: ["[::1]", "10.0.0.5"] });
+  });
+
   it("collects repeated and environment roots", () => {
     vi.stubEnv("DESIGNER_SKILL_ROOTS", " /c , ,/d");
     expect(run("--root", "/a", "--root", "/b")).toMatchObject({ roots: ["/a", "/b", "/c", "/d"] });

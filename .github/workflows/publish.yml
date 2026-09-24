@@ -70,7 +70,7 @@ jobs:
     environment: npm
     permissions:
       contents: read
-      id-token: write   # npm provenance
+      id-token: write   # npm trusted publishing + provenance
     steps:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -82,22 +82,22 @@ jobs:
           path: pkg
       - name: Publish to npm with provenance
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           TAG: ${{ github.ref_name }}
+        # Trusted publishing (OIDC, no token): npmjs.com → package Settings → Trusted
+        # publisher → GitHub Actions, PyModel/designer-skill, publish.yml, environment npm.
+        # Provenance is attached automatically.
         run: |
           published() { npm view "@pymodel/designer-skill-mcp@${TAG#v}" version >/dev/null 2>&1; }
-          if [ -n "$NODE_AUTH_TOKEN" ]; then
-            if published; then echo "already on npm; skipping"; exit 0; fi
-            npm publish ./pkg/*.tgz --provenance --access public --ignore-scripts
-            exit 0
-          fi
-          # No token: release.sh PUBLISH_LOCAL=1 published it; npm processes uploads
-          # asynchronously, so wait for the version instead of racing it.
+          if published; then echo "already on npm; skipping"; exit 0; fi
+          if npm publish ./pkg/*.tgz --provenance --access public --ignore-scripts; then exit 0; fi
+          # release.sh PUBLISH_LOCAL=1 may have published it already: npm processes
+          # uploads asynchronously, so wait for the version instead of failing the race.
+          echo "::warning::CI publish failed; waiting up to 10 min for a local publish"
           for _ in $(seq 60); do
             if published; then echo "published locally; skipping"; exit 0; fi
             sleep 10
           done
-          echo "::error::${TAG#v} not on npm after 10 min and no NPM_TOKEN secret to publish it"
+          echo "::error::${TAG#v} is not on npm: configure the trusted publisher or publish with PUBLISH_LOCAL=1"
           exit 1
 
   registry:
