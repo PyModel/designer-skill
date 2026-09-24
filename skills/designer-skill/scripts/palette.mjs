@@ -18,7 +18,7 @@
  *
  * Usage:
  *   node scripts/palette.mjs                  # pick at random
- *   node scripts/palette.mjs --id seed-021    # pick a specific seed
+ *   node scripts/palette.mjs --id seed-200    # pick a specific seed
  *   node scripts/palette.mjs --from <key>     # hash <key> to a seed (deterministic)
  *
  * Env vars:
@@ -27,6 +27,8 @@
  */
 
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // Seeds are inlined (129 entries, hand-curated via a tinder review of
 // ~400 candidates from ColorHunt + synthesis + Radix/brand/Pantone anchors).
@@ -463,10 +465,19 @@ function weightedPick(seeds, unit) {
   return seeds[seeds.length - 1];
 }
 
+class UnknownSeedError extends Error {
+  constructor(id) {
+    super(`No palette seed with id "${id}". Omit id for a weighted pick, or use one of the listed seed ids.`);
+    this.code = 'UNKNOWN_SEED';
+  }
+}
+
+export const SEED_IDS = Object.freeze(SEEDS.map((s) => s.id));
+
 function pickSeed(seeds, { id, from }) {
   if (id) {
     const found = seeds.find(s => s.id === id);
-    if (!found) { console.error(`no seed with id "${id}"`); process.exit(2); }
+    if (!found) throw new UnknownSeedError(id);
     return found;
   }
   const envFrom = process.env.DESIGNER_SKILL_PALETTE_SEED;
@@ -633,9 +644,23 @@ build with it. The seed is the start, not the recipe.
 `;
 }
 
-// CLI entry — unchanged behavior for `node palette.mjs --id seed-021`.
-const invokedAsScript =
-  process.argv[1] && (process.argv[1].endsWith('palette.mjs') || process.argv[1].endsWith('palette.mjs/'));
-if (invokedAsScript) {
-  process.stdout.write(renderPalette(parseArgs(process.argv.slice(2))));
+// CLI entry: only when this file is the process entry point (realpaths
+// compared, so symlinked installs and similarly named scripts are handled).
+function invokedAsScript() {
+  if (!process.argv[1]) return false;
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (invokedAsScript()) {
+  try {
+    process.stdout.write(renderPalette(parseArgs(process.argv.slice(2))));
+  } catch (error) {
+    if (error.code !== 'UNKNOWN_SEED') throw error;
+    console.error(error.message);
+    process.exitCode = 2;
+  }
 }

@@ -1,30 +1,27 @@
 ---
-description: Enforce designer-skill MCP workflow before any UI/design work
+description: Follow the designer-skill MCP workflow for UI and design work
 globs: "**/*.{tsx,jsx,vue,svelte,astro,html,css,scss}"
 alwaysApply: false
 ---
 
 # Designer Skill MCP Rule
 
-Before editing or generating any UI, layout, landing page, component, dashboard, or visual design:
+For UI, layout, component, page or visual design work:
 
-1. Call `get_preflight_brief`.
-2. Call `commit_design_direction` and get **PASS** before writing code:
-   - register: `brand` or `product`
-   - one-line design read: surface + audience + visual language
-   - design variance, motion intensity, and visual density: whole numbers from 1–10
-   - aesthetic system (one per surface)
-   - physical scene (one sentence)
-   - layout families
-   - typography direction
-   - anti-slop risks (≥2)
-   - inverse-test pass + description
-3. Call `load_project_context` when PRODUCT.md / DESIGN.md may exist.
-4. Call `dispatch_intent` and load **only** the recommended references via `get_reference`.
-5. Implement the design.
-6. Call `review_and_gate` on changed files before the final response.
-7. Do not claim completion if `review_and_gate` returns **FAIL** or blocking slop findings remain.
-
-**Foundation:** Brief by default → commit direction before code → deep refs on demand → deterministic gate before done.
+1. Call `get_preflight_brief`. Audits and plans do not authorize edits.
+2. Call `load_project_context` with the absolute project root (`cwd`). Inspect existing tokens, components and states before choosing a direction.
+3. Call `dispatch_intent` and load only the references it recommends with `get_reference` (normally 1–4).
+4. Bounded repairs preserve the existing identity: skip direction ceremony, or call `commit_design_direction` with `mode: "preserve"`. For a new direction, call it with:
+   - `register`: `brand` or `product`
+   - `designRead`: 20+ characters on this surface, audience and visual language
+   - `contextSources`: the project files you actually inspected (required, 1–32)
+   - optional: `aesthetic`, `typographyDirection`, `layoutFamilies`, `designVariance` / `motionIntensity` / `visualDensity` (whole numbers 1–10)
+   A PASS validates inputs only.
+5. Make the smallest coherent authorized change.
+6. Call `review_and_gate` with `cwd` and the changed files as `target`.
+   - `staticStatus: FAIL` → fix the blocking findings.
+   - `INCOMPLETE` → a required rule could not run (see `ruleCoverage`); report it, do not call it passed.
+   - Overall `status` is never PASS: `NOT_VERIFIED` means rendered, functional and accessibility checks still need their own evidence.
+7. Report task completion separately from UI readiness.
 
 Copy to `.cursor/rules/` in your project, or symlink from this file.

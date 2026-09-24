@@ -1,10 +1,11 @@
 // Dependency-free regression tests against compiled production modules.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { selectScanFiles, validateConfigFiles } from '../dist/scope.js';
+import { join } from 'node:path';
+import { selectScanFiles } from '../dist/scope.js';
+import { scanAntipatterns } from '../dist/detect.js';
 import { evaluateGate, validateRegistry } from '../dist/gate.js';
 import { dispatchIntent } from '../dist/dispatch.js';
 import { listCommands, getCommandReads, resolveCommandVerb, validateCommandMetadata } from '../dist/commands.js';
@@ -19,36 +20,45 @@ function workspace(t) {
 }
 const registry = [
   { id: 'overused-font', category: 'slop' }, { id: 'low-contrast', category: 'quality' },
-  { id: 'broken-image', category: 'quality' },
+  { id: 'broken-image', category: 'quality' }, { id: 'clipped-overflow-container', category: 'quality' },
+  { id: 'text-overflow', category: 'quality' },
 ];
-const finding = (id) => ({ file: 'app.css', antipattern: id, snippet: 'sample', description: 'test fixture' });
+const ran = () => ({ status: 'RAN' });
+const finding = (id) => ({ file: 'app.html', antipattern: id, name: id, severity: 'warning', snippet: 'sample', description: 'test fixture' });
 const report = (findings = [], scannedFiles = 1) => ({
-  target: '.', findings, files: [], ignoredRules: [], ignoredValues: 0,
-  coverage: { candidateFiles: scannedFiles, scannedFiles, ignoredFiles: 0, unsupportedFiles: 0, excludedDirectories: 0, bytesScanned: scannedFiles * 10 },
+  target: '.', findings, files: [], ignoredRules: [], waivedRules: [], ignoredValues: 0, designSystem: { status: 'absent' },
+  scannedFiles: Array.from({ length: scannedFiles }, (_, i) => ({ path: `f${i}.html`, engine: 'static-html', fullPage: true, gaps: [] })),
+  coverage: {
+    enumeration: 'filesystem', candidateFiles: scannedFiles, scannedFiles, ignoredFiles: 0, unsupportedFiles: 0, excludedDirectories: 0,
+    skippedSymlinks: 0, skippedSpecialFiles: 0, unreadableEntries: 0, skippedPaths: [], bytesScanned: scannedFiles * 10,
+  },
+});
+const filters = (overrides = {}) => ({
+  extensions: new Set(['.css']), skipDirectories: new Set(), isIgnoredFile: () => false, isPrunedDirectory: () => false, ...overrides,
 });
 
 test('empty scan fails instead of returning a perfect score', () => {
-  const result = evaluateGate(report([], 0), registry);
+  const result = evaluateGate(report([], 0), registry, ran);
   assert.equal(result.staticStatus, 'FAIL'); assert.equal(result.code, 'NO_SCAN_COVERAGE');
   assert.notEqual(result.status, 'PASS');
 });
 test('static success never claims UI PASS', () => {
-  const result = evaluateGate(report(), registry);
+  const result = evaluateGate(report(), registry, ran);
   assert.equal(result.staticStatus, 'PASS'); assert.equal(result.status, 'NOT_VERIFIED');
   assert.equal(result.uiReadiness, 'NOT_VERIFIED');
   assert.ok(result.checks.slice(1).every((c) => c.status === 'NOT_RUN' && c.producer === null));
 });
 test('style preferences are advisory unless explicitly adopted', () => {
   const sample = report([finding('overused-font')]);
-  assert.equal(evaluateGate(sample, registry).blockingCount, 0);
-  assert.equal(evaluateGate(sample, registry, ['overused-font']).blockingCount, 1);
+  assert.equal(evaluateGate(sample, registry, ran).blockingCount, 0);
+  assert.equal(evaluateGate(sample, registry, ran, ['overused-font']).blockingCount, 1);
 });
 test('accessibility findings cannot be offset by style scores', () => {
-  assert.equal(evaluateGate(report([finding('low-contrast')]), registry).staticStatus, 'FAIL');
+  assert.equal(evaluateGate(report([finding('low-contrast')]), registry, ran).staticStatus, 'FAIL');
 });
 test('findings are deduplicated by file, line, rule and snippet', () => {
   const f = finding('broken-image');
-  assert.equal(evaluateGate(report([f, { ...f }]), registry).findingCount, 1);
+  assert.equal(evaluateGate(report([f, { ...f }]), registry, ran).findingCount, 1);
 });
 test('missing, malformed and duplicate registries fail closed', () => {
   for (const value of [undefined, {}, [], [{ id: '', category: 'slop' }], [registry[0], registry[0]]]) {
@@ -56,34 +66,36 @@ test('missing, malformed and duplicate registries fail closed', () => {
   }
 });
 test('unknown rule emissions and unknown project policy fail closed', () => {
-  assert.throws(() => evaluateGate(report([finding('unknown')]), registry), { code: 'REGISTRY_INVALID' });
-  assert.throws(() => evaluateGate(report(), registry, ['unknown']), { code: 'REGISTRY_INVALID' });
+  assert.throws(() => evaluateGate(report([finding('unknown')]), registry, ran), { code: 'REGISTRY_INVALID' });
+  assert.throws(() => evaluateGate(report(), registry, ran, ['unknown']), { code: 'REGISTRY_INVALID' });
 });
 test('ignored-only selection records zero coverage', (t) => {
   const root = workspace(t); writeFileSync(join(root, 'app.css'), 'body {}');
-  const selected = selectScanFiles(root, '.', new Set(['.css']), new Set(), () => true);
+  const selected = selectScanFiles(root, '.', filters({ isIgnoredFile: () => true }));
   assert.equal(selected.coverage.candidateFiles, 1); assert.equal(selected.coverage.ignoredFiles, 1);
   assert.equal(selected.files.length, 0);
-  assert.equal(evaluateGate({ ...report(), coverage: selected.coverage }, registry).code, 'NO_SCAN_COVERAGE');
+  assert.equal(evaluateGate({ ...report(), scannedFiles: [], coverage: selected.coverage }, registry, ran).code, 'NO_SCAN_COVERAGE');
 });
 test('unsupported files are visible but never scanned as code', (t) => {
   const root = workspace(t); writeFileSync(join(root, 'notes.md'), 'Notes');
-  const selected = selectScanFiles(root, 'notes.md', new Set(['.css']), new Set(), () => false);
+  const selected = selectScanFiles(root, 'notes.md', filters());
   assert.equal(selected.coverage.unsupportedFiles, 1); assert.equal(selected.files.length, 0);
 });
-test('traversal and symlink escapes fail before reading content', (t) => {
+test('traversal and symlinked targets fail; symlinks under a directory are skipped unread', (t) => {
   const root = workspace(t), other = workspace(t); writeFileSync(join(other, 'private.css'), 'secret');
-  assert.throws(() => selectScanFiles(root, join(other, 'private.css'), new Set(['.css']), new Set(), () => false), { code: 'SCOPE_VIOLATION' });
+  assert.throws(() => selectScanFiles(root, join(other, 'private.css'), filters()), { code: 'SCOPE_VIOLATION' });
   symlinkSync(join(other, 'private.css'), join(root, 'escape.css'));
-  assert.throws(() => selectScanFiles(root, '.', new Set(['.css']), new Set(), () => false), { code: 'SCOPE_VIOLATION' });
+  assert.throws(() => selectScanFiles(root, 'escape.css', filters()), { code: 'SCOPE_VIOLATION' });
+  const selected = selectScanFiles(root, '.', filters());
+  assert.deepEqual(selected.files, []); assert.equal(selected.coverage.skippedSymlinks, 1);
 });
-test('oversized source fails rather than silently truncating', (t) => {
-  const root = workspace(t); writeFileSync(join(root, 'large.css'), Buffer.alloc(2 * 1024 * 1024 + 1));
-  assert.throws(() => selectScanFiles(root, '.', new Set(['.css']), new Set(), () => false), { code: 'SCAN_LIMIT' });
+test('oversized source fails rather than silently truncating', async (t) => {
+  const root = workspace(t); writeFileSync(join(root, 'large.css'), Buffer.alloc(2 * 1024 * 1024 + 1, 0x61));
+  await assert.rejects(scanAntipatterns('.', { cwd: root }), { code: 'SCAN_LIMIT' });
 });
 test('standard excluded directories are counted', (t) => {
   const root = workspace(t); mkdirSync(join(root, 'node_modules')); writeFileSync(join(root, 'a.css'), 'a {}');
-  const selected = selectScanFiles(root, '.', new Set(['.css']), new Set(['node_modules']), () => false);
+  const selected = selectScanFiles(root, '.', filters({ skipDirectories: new Set(['node_modules']) }));
   assert.equal(selected.coverage.excludedDirectories, 1); assert.equal(selected.files.length, 1);
 });
 test('DESIGN.md survives missing PRODUCT.md', (t) => {
@@ -157,14 +169,14 @@ test('router follows the five-section contract', () => {
 
 test('zero-byte scans and entirely disabled rule sets do not pass', () => {
   const empty = report(); empty.coverage.bytesScanned = 0;
-  assert.equal(evaluateGate(empty, registry).staticStatus, 'FAIL');
-  const disabled = report(); disabled.ignoredRules = registry.map((rule) => rule.id);
-  assert.equal(evaluateGate(disabled, registry).staticStatus, 'FAIL');
+  assert.equal(evaluateGate(empty, registry, ran).staticStatus, 'FAIL');
+  const disabled = report(); disabled.waivedRules = ['low-contrast', 'broken-image', 'clipped-overflow-container'];
+  assert.equal(evaluateGate(disabled, registry, ran).code, 'NO_SCAN_COVERAGE');
 });
-test('malformed detector config cannot silently become defaults', (t) => {
+test('malformed detector config cannot silently become defaults', async (t) => {
   const root = workspace(t); mkdirSync(join(root, '.designer-skill'));
   for (const content of ['{broken', '[]', '{"detector":{"ignoreRules":false}}', '{"detector":{"designSystem":{"enabled":"false"}}}']) {
     writeFileSync(join(root, '.designer-skill/config.json'), content);
-    assert.throws(() => validateConfigFiles(root), { code: 'CONFIG_INVALID' });
+    await assert.rejects(scanAntipatterns('.', { cwd: root }), { code: 'CONFIG_INVALID' });
   }
 });

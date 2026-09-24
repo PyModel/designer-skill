@@ -1,62 +1,77 @@
 // Validate a direction record, not aesthetic taste or writes through other tools.
 import { createHash } from "node:crypto";
-export type Register = "brand" | "product";
-export const AESTHETIC_SYSTEMS = ["minimalist", "brutalist", "soft", "high-end-stitch", "brand-identity", "product"] as const;
-export type AestheticSystem = (typeof AESTHETIC_SYSTEMS)[number];
-export interface DesignDirectionInput {
-  mode?: "preserve" | "change";
-  register: Register;
-  designRead: string;
-  contextSources: string[];
-  aesthetic?: string;
-  typographyDirection?: string;
-  layoutFamilies?: string[];
-  designVariance?: number;
-  motionIntensity?: number;
-  visualDensity?: number;
-  physicalScene?: string;
-  antiSlopRisks?: string[];
-  inverseTestPass?: boolean;
-  inverseTestDescription?: string;
-  namedReferences?: string[];
-}
+import { z } from "zod";
+
+// The single definition of a direction record's constraints; the MCP tool
+// uses this shape as its inputSchema and commitDesignDirection re-validates it.
+export const directionInputShape = {
+  mode: z.enum(["preserve", "change"]).default("change"),
+  register: z.enum(["brand", "product"]),
+  designRead: z.string().trim().min(20).max(2_000),
+  contextSources: z.array(z.string().trim().min(1).max(2_000)).min(1).max(32),
+  aesthetic: z.string().trim().min(1).max(200).optional(),
+  typographyDirection: z.string().trim().min(1).max(2_000).optional(),
+  layoutFamilies: z.array(z.string().trim().min(1).max(200)).max(32).optional(),
+  designVariance: z.number().int().min(1).max(10).optional(),
+  motionIntensity: z.number().int().min(1).max(10).optional(),
+  visualDensity: z.number().int().min(1).max(10).optional(),
+  physicalScene: z.string().max(2_000).optional(),
+  antiSlopRisks: z.array(z.string().max(500)).max(32).optional(),
+  inverseTestPass: z.boolean().optional(),
+  inverseTestDescription: z.string().max(2_000).optional(),
+  namedReferences: z.array(z.string().max(500)).max(16).optional(),
+};
+const directionInputSchema = z.object(directionInputShape);
+export type DesignDirectionInput = z.input<typeof directionInputSchema>;
+type DesignDirection = z.output<typeof directionInputSchema>;
+
 export interface DesignDirectionResult {
   status: "PASS" | "FAIL";
   scope: "input-validation";
   message: string;
   directionId?: string;
-  direction?: DesignDirectionInput;
+  direction?: DesignDirection;
   fixes?: string[];
 }
+
+const FIELD_HINTS: Record<string, string> = {
+  mode: "mode must be preserve or change.",
+  register: "register must be brand or product.",
+  designRead: "designRead must contain 20-2,000 characters describing this task.",
+  contextSources: "contextSources must identify 1-32 inspected project sources.",
+  designVariance: "designVariance must be a whole number from 1 to 10.",
+  motionIntensity: "motionIntensity must be a whole number from 1 to 10.",
+  visualDensity: "visualDensity must be a whole number from 1 to 10.",
+};
+
 export function commitDesignDirection(input: DesignDirectionInput): DesignDirectionResult {
+  const parsed = directionInputSchema.safeParse(input);
   const fixes: string[] = [];
-  const mode = input.mode ?? "change";
-  if (!["preserve", "change"].includes(mode)) fixes.push("mode must be preserve or change.");
-  if (!["brand", "product"].includes(input.register)) fixes.push("register must be brand or product.");
-  const designRead = input.designRead?.trim() ?? "";
-  if (designRead.length < 20 || designRead.length > 2_000) fixes.push("designRead must contain 20-2,000 characters describing this task.");
-  if (!Array.isArray(input.contextSources) || !input.contextSources.length || input.contextSources.length > 32 ||
-    input.contextSources.some((s) => typeof s !== "string" || !s.trim() || s.length > 2_000)) {
-    fixes.push("contextSources must identify 1-32 inspected project sources.");
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const field = String(issue.path[0] ?? "input");
+      const hint = FIELD_HINTS[field] ?? `${field}: ${issue.message}`;
+      if (!fixes.includes(hint)) fixes.push(hint);
+    }
+    return { status: "FAIL", scope: "input-validation", message: "Direction input is incomplete or invalid.", fixes };
   }
-  for (const name of ["designVariance", "motionIntensity", "visualDensity"] as const) {
-    const value = input[name];
-    if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 10)) fixes.push(`${name} must be a whole number from 1 to 10.`);
-  }
-  const layouts = input.layoutFamilies?.map((s) => s.trim()).filter(Boolean) ?? [];
-  if (mode === "change") {
-    if (!input.aesthetic?.trim()) fixes.push("aesthetic must state the chosen visual language; custom systems are allowed.");
-    if (!input.typographyDirection?.trim()) fixes.push("typographyDirection must state the approved type approach.");
+  const direction = parsed.data;
+  const layouts = direction.layoutFamilies ?? [];
+  if (direction.mode === "change") {
+    if (!direction.aesthetic) fixes.push("aesthetic must state the chosen visual language; custom systems are allowed.");
+    if (!direction.typographyDirection) fixes.push("typographyDirection must state the approved type approach.");
     if (!layouts.length || new Set(layouts).size !== layouts.length) fixes.push("layoutFamilies must contain distinct applicable patterns.");
   }
   if (fixes.length) return { status: "FAIL", scope: "input-validation", message: "Direction input is incomplete or invalid.", fixes };
-  const direction = { ...input, mode, designRead, contextSources: input.contextSources.map((s) => s.trim()), layoutFamilies: layouts };
+  const record = { ...direction, layoutFamilies: layouts };
   return {
     status: "PASS", scope: "input-validation",
     message: "Direction input accepted. This does not prove visual quality, persist approval, or enforce external file writes. Inverse test statements are advisory.",
-    directionId: createHash("sha256").update(JSON.stringify(direction)).digest("hex"), direction,
+    directionId: createHash("sha256").update(JSON.stringify(record)).digest("hex"), direction: record,
   };
 }
+
 export function formatDesignDirectionResult(result: DesignDirectionResult): string {
-  return `## commit_design_direction: ${result.status}\n\n${result.message}\n\n` + JSON.stringify(result, null, 2);
+  if (result.status === "FAIL") return `## commit_design_direction: FAIL\n\n${result.message}\n\n${result.fixes!.map((f) => `- ${f}`).join("\n")}`;
+  return `## commit_design_direction: PASS\n\n${result.message}\n\ndirectionId: ${result.directionId}`;
 }

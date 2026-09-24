@@ -1,0 +1,108 @@
+name: Publish
+
+# Runs on the tag pushed by scripts/release.sh. `npm` builds from a clean
+# checkout of the tag, re-verifies and publishes; `registry` and
+# `github-release` run after it as separate jobs, so "Re-run failed jobs"
+# repeats only the step that failed. npm and GitHub steps also skip work
+# that is already done.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write   # npm provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: designer-skill-mcp/package-lock.json
+
+      - name: Tag matches every version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          node scripts/versions.mjs check
+          test "$TAG" = "v$(node -p "require('./designer-skill-mcp/package.json').version")"
+
+      - name: Build and verify
+        working-directory: designer-skill-mcp
+        run: |
+          npm ci
+          npm run build
+          git diff --exit-code -- assets/
+          node --test checks/core.mjs
+          npm test
+          node scripts/smoke-tarball.mjs
+
+      - name: Publish to npm with provenance
+        working-directory: designer-skill-mcp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "@pymodel/designer-skill-mcp@${VERSION}" version >/dev/null 2>&1; then
+            echo "already on npm; skipping"
+          else
+            npm publish --provenance --access public --ignore-scripts
+          fi
+
+  registry:
+    needs: npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write   # MCP registry GitHub OIDC login
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # UNVERIFIED: installer URL and `login github-oidc` follow the MCP registry
+      # publishing guide; confirm against the registry docs before the first run.
+      - name: Publish to the MCP registry
+        working-directory: designer-skill-mcp
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher validate
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
+
+  github-release:
+    needs: npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0   # the annotated tag object, for --notes-from-tag
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release exists; skipping"
+          else
+            gh release create "$TAG" --title "designer-skill-mcp $TAG" --notes-from-tag --verify-tag
+          fi

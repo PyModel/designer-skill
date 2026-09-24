@@ -280,23 +280,62 @@
               ]
             },
             "items": {
-              "if": {
-                "properties": {
-                  "required": {
-                    "const": true
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "required": {
+                        "const": true
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "status": {
+                        "enum": [
+                          "PASS",
+                          "NOT_APPLICABLE"
+                        ]
+                      }
+                    }
                   }
-                }
-              },
-              "then": {
-                "properties": {
-                  "status": {
-                    "enum": [
-                      "PASS",
-                      "NOT_APPLICABLE"
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "required": {
+                        "const": true
+                      },
+                      "status": {
+                        "const": "PASS"
+                      }
+                    },
+                    "required": [
+                      "required",
+                      "status"
                     ]
+                  },
+                  "then": {
+                    "properties": {
+                      "evidence": {
+                        "contains": {
+                          "properties": {
+                            "origin": {
+                              "enum": [
+                                "executed",
+                                "observed"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "origin"
+                          ]
+                        }
+                      }
+                    }
                   }
                 }
-              }
+              ]
             }
           },
           "findings": {
@@ -388,6 +427,27 @@
         "properties": {
           "uiReadiness": {
             "const": "PASS"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "taskStatus": {
+            "const": "BLOCKED"
+          }
+        },
+        "required": [
+          "taskStatus"
+        ]
+      },
+      "then": {
+        "properties": {
+          "uiReadiness": {
+            "not": {
+              "const": "PASS"
+            }
           }
         }
       }

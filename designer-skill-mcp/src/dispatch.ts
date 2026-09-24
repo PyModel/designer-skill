@@ -23,7 +23,8 @@ function cueMatches(query: string, cue: string): boolean {
 
 export function dispatchIntent(request: string): DispatchResult {
   if (!request.trim() || request.length > 8_000) throw new DesignError("INPUT_INVALID", "Request must contain 1-8,000 characters.");
-  const query = request.normalize("NFKC").toLowerCase().trim().replace(/\s+/g, " ");
+  // Typographic apostrophes (’ ʼ ‘) must not defeat negation cues like "don't".
+  const query = request.normalize("NFKC").replace(/[\u2018\u2019\u02BC]/g, "'").toLowerCase().trim().replace(/\s+/g, " ");
   const meta = getCommandMetadata();
   let reason: DispatchResult["reason"] = "matched";
   let matched: DispatchMatch[] = [];
@@ -45,7 +46,7 @@ export function dispatchIntent(request: string): DispatchResult {
     matched = Object.entries(meta).map(([verb, entry]) => ({
       verb, files: [...entry.reads], note: entry.description,
       score: entry.cues.filter((cue) => cueMatches(query, cue)).length,
-    })).filter((m) => m.score > 0).sort((a, b) => b.score - a.score || a.verb.localeCompare(b.verb)).slice(0, 3);
+    })).filter((m) => m.score > 0).sort((a, b) => b.score - a.score || (a.verb < b.verb ? -1 : a.verb > b.verb ? 1 : 0)).slice(0, 3);
     if (!matched.length) reason = "no-match";
   }
   const allReads = [...new Set(matched.flatMap((m) => m.files))];

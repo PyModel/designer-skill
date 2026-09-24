@@ -353,7 +353,7 @@ const ANTIPATTERNS = [
     skillGuideline: 'border radius outside the project design system',
   },
 
-  // ── Provider tells: opt-in via --gpt / --gemini (gated off by default) ──
+  // ── Provider tells: opt-in via options.providers (gated off by default) ──
   {
     id: 'gpt-thin-border-wide-shadow',
     category: 'slop',
@@ -400,12 +400,79 @@ const ANTIPATTERNS = [
   },
 ];
 
-const RULE_ENGINE_SUPPORT = {
-  regex: new Set(['source', 'page-analyzer']),
-  'static-html': new Set(['element', 'page']),
-  browser: new Set(['element', 'page', 'layout']),
-  visual: new Set(['visual-contrast']),
+// What each static engine can evaluate. The scan gate uses this to report a
+// rule as RAN, UNSUPPORTED or UNRESOLVED per file instead of inferring
+// coverage based on whether any rule was enabled.
+//   element:  evaluated on any file the engine handles
+//   page:     evaluated only on full documents (doctype/<html>/<head>)
+//   cascade:  element rules whose result depends on resolved stylesheets
+//   design:   evaluated only when DESIGN.md tokens are loaded
+const DESIGN_SYSTEM_RULES = ['design-system-font', 'design-system-color', 'design-system-radius'];
+const STATIC_RULE_SUPPORT = {
+  'static-html': {
+    element: [
+      'side-tab', 'border-accent-on-rounded', 'low-contrast', 'gray-on-color', 'ai-color-palette',
+      'gradient-text', 'dark-glow', 'bounce-easing', 'layout-transition', 'icon-tile-stack',
+      'italic-serif-display', 'hero-eyebrow-chip', 'broken-image', 'cramped-padding', 'tight-leading',
+      'justified-text', 'tiny-text', 'all-caps-body', 'wide-tracking', 'extreme-negative-tracking',
+      'oversized-h1', 'clipped-overflow-container', 'gpt-thin-border-wide-shadow',
+    ],
+    page: [
+      'overused-font', 'single-font', 'flat-type-hierarchy', 'repeated-section-kickers', 'nested-cards',
+      'cream-palette', 'skipped-heading', 'repeating-stripes-gradient', 'theater-slop-phrase',
+      'image-hover-transform', 'em-dash-overuse', 'marketing-buzzword', 'numbered-section-markers',
+      'aphoristic-cadence',
+    ],
+    cascade: [
+      'side-tab', 'border-accent-on-rounded', 'low-contrast', 'gray-on-color', 'ai-color-palette',
+      'gradient-text', 'dark-glow', 'bounce-easing', 'layout-transition', 'icon-tile-stack',
+      'italic-serif-display', 'hero-eyebrow-chip', 'cramped-padding', 'tight-leading', 'justified-text',
+      'tiny-text', 'all-caps-body', 'wide-tracking', 'extreme-negative-tracking', 'oversized-h1',
+      'clipped-overflow-container', 'gpt-thin-border-wide-shadow', 'overused-font', 'single-font',
+      'flat-type-hierarchy', 'repeated-section-kickers', 'nested-cards', 'cream-palette',
+    ],
+    design: DESIGN_SYSTEM_RULES,
+  },
+  regex: {
+    element: [
+      'side-tab', 'border-accent-on-rounded', 'overused-font', 'gradient-text', 'gray-on-color',
+      'ai-color-palette', 'bounce-easing', 'layout-transition', 'broken-image',
+    ],
+    page: [
+      'single-font', 'flat-type-hierarchy', 'monotonous-spacing', 'em-dash-overuse', 'marketing-buzzword',
+      'numbered-section-markers', 'aphoristic-cadence', 'dark-glow',
+    ],
+    cascade: [],
+    design: DESIGN_SYSTEM_RULES,
+  },
 };
+
+// Rules no static engine implements (they need a rendered layout).
+const RENDERED_ONLY_RULES = ['text-overflow', 'line-length', 'body-text-viewport-edge'];
+
+/**
+ * Coverage of one rule on one scanned file.
+ * file: { engine, fullPage, gaps: [{ kind, rule? }] }, designSystemStatus:
+ * 'absent'|'no-tokens'|'loaded'|'invalid'. Returns { status, reason }.
+ */
+function staticRuleCoverage(ruleId, file, designSystemStatus) {
+  const support = STATIC_RULE_SUPPORT[file.engine];
+  if (!support) return { status: 'UNSUPPORTED', reason: `no static engine for ${file.engine}` };
+  if (support.design.includes(ruleId)) {
+    if (designSystemStatus === 'invalid') return { status: 'UNRESOLVED', reason: 'DESIGN.md is invalid' };
+    if (designSystemStatus !== 'loaded') return { status: 'UNSUPPORTED', reason: 'no DESIGN.md tokens' };
+    return { status: 'RAN' };
+  }
+  const element = support.element.includes(ruleId);
+  const page = support.page.includes(ruleId);
+  if (!element && !(page && file.fullPage)) {
+    return { status: 'UNSUPPORTED', reason: page ? 'rule runs on full documents only' : `not implemented by the ${file.engine} engine` };
+  }
+  const gap = (file.gaps || []).find((g) =>
+    g.rule === ruleId || (g.kind === 'UNRESOLVED_STYLESHEET' && support.cascade.includes(ruleId)));
+  if (gap) return { status: 'UNRESOLVED', reason: gap.detail || gap.kind };
+  return { status: 'RAN' };
+}
 
 function getAntipattern(id) {
   return ANTIPATTERNS.find(rule => rule.id === id);
@@ -415,17 +482,13 @@ function getRulesForCategory(category) {
   return ANTIPATTERNS.filter(rule => rule.category === category);
 }
 
-function getRuleEngineSupport(engine) {
-  return RULE_ENGINE_SUPPORT[engine] || new Set();
-}
-
 // Set of provider tags that gate rules off by default (e.g. 'gpt', 'gemini').
 const GATED_PROVIDERS = new Set(
   ANTIPATTERNS.map(rule => rule.gated).filter(Boolean),
 );
 
 // Drop findings for rules gated behind a provider tag unless that provider
-// was explicitly enabled (CLI --gpt / --gemini). Non-gated findings always
+// was explicitly enabled (`options.providers`; the MCP enables none). Non-gated findings always
 // pass through. `findings` carry the rule id on `.antipattern`.
 function filterByProviders(findings, providers = []) {
   const enabled = new Set(providers || []);
@@ -439,10 +502,11 @@ function filterByProviders(findings, providers = []) {
 
 export {
   ANTIPATTERNS,
-  RULE_ENGINE_SUPPORT,
+  STATIC_RULE_SUPPORT,
+  RENDERED_ONLY_RULES,
   GATED_PROVIDERS,
   getAntipattern,
   getRulesForCategory,
-  getRuleEngineSupport,
+  staticRuleCoverage,
   filterByProviders,
 };

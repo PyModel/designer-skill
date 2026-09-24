@@ -1,147 +1,92 @@
 #!/usr/bin/env bash
-# Release designer-skill-mcp: bump versions, test, commit, tag, push, npm publish, GitHub release.
-#
-# Default version bump: +0.1.0 minor (0.10.0 → 0.11.0). Pass an explicit semver to override.
+# Prepare a designer-skill-mcp release: bump + sync every version, verify, commit, tag, push.
+# Publishing (npm with provenance, MCP registry, GitHub release) runs in
+# .github/workflows/publish.yml from a clean checkout of the pushed tag, so
+# what ships is exactly what was tagged. Every step is safe to rerun.
 #
 # Usage:
-#   ./scripts/release.sh "Release notes"
-#   ./scripts/release.sh 0.11.1 "Hotfix notes"
+#   ./scripts/release.sh "Release notes"            # next minor (0.17.0 → 0.18.0)
+#   ./scripts/release.sh 0.17.1 "Hotfix notes"      # explicit x.y.z (a leading v is accepted)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PKG_DIR="$ROOT/designer-skill-mcp"
+PKG_NAME="@pymodel/designer-skill-mcp"
+cd "$ROOT"
 
-read_current_version() {
-  node -p "require('${PKG_DIR}/package.json').version"
-}
+die() { echo "ERROR: $*" >&2; exit 1; }
+current_version() { node -p "require('${PKG_DIR}/package.json').version"; }
 
-next_minor_version() {
-  node -e "
-    const [major, minor] = process.argv[1].split('.').map(Number);
-    if ([major, minor].some((n) => Number.isNaN(n))) process.exit(1);
-    console.log(\`\${major}.\${minor + 1}.0\`);
-  " "$(read_current_version)"
-}
-
-is_semver() {
-  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-}
-
-if [[ $# -eq 0 ]]; then
-  VERSION="$(next_minor_version)"
-  NOTES="Release designer-skill-mcp v${VERSION}."
-elif is_semver "${1:-}"; then
-  VERSION="$1"
-  shift || true
-  NOTES="${*:-Release designer-skill-mcp v${VERSION}.}"
+# --- Arguments: strict x.y.z, one optional leading v -------------------------
+if [[ $# -gt 0 && "$1" =~ ^v?[0-9] ]]; then
+  VERSION="${1#v}"
+  shift
+  [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version \"$VERSION\" is not x.y.z"
 else
-  VERSION="$(next_minor_version)"
-  NOTES="$*"
+  # shellcheck disable=SC2016 # JS template literal, not shell expansion
+  VERSION="$(node -e 'const [a, b] = process.argv[1].split(".").map(Number); console.log(`${a}.${b + 1}.0`)' "$(current_version)")"
 fi
-
-CURRENT="$(read_current_version)"
-echo "==> Current version: ${CURRENT}"
-echo "==> Target version:  ${VERSION} (default bump: +0.1.0 minor)"
-
+NOTES="${*:-Release designer-skill-mcp v${VERSION}.}"
 TAG="v${VERSION}"
+echo "==> ${PKG_NAME}: $(current_version) → ${VERSION} (${TAG})"
 
-echo "==> Bump package to ${VERSION}"
-cd "$PKG_DIR"
-npm version "$VERSION" --no-git-tag-version --allow-same-version
-
-echo "==> Sync plugin manifests"
-node <<NODE
-const fs = require("fs");
-const paths = [
-  ["${ROOT}/.claude-plugin/plugin.json", (s) => JSON.stringify({ ...JSON.parse(s), version: "${VERSION}" }, null, 2) + "\n"],
-  ["${ROOT}/.codex-plugin/plugin.json", (s) => JSON.stringify({ ...JSON.parse(s), version: "${VERSION}" }, null, 2) + "\n"],
-  ["${ROOT}/.cursor-plugin/plugin.json", (s) => JSON.stringify({ ...JSON.parse(s), version: "${VERSION}" }, null, 2) + "\n"],
-  ["${PKG_DIR}/server.json", (s) => JSON.stringify({ ...JSON.parse(s), version: "${VERSION}", packages: [{ ...JSON.parse(s).packages[0], version: "${VERSION}" }] }, null, 2) + "\n"],
-];
-for (const [file, transform] of paths) {
-  fs.writeFileSync(file, transform(fs.readFileSync(file, "utf8")));
-}
-NODE
-
-echo "==> Update doc version pins"
-node <<NODE
-const fs = require("fs");
-const version = "${VERSION}";
-const pin = \`@\${version}\`;
-const files = [
-  ["${ROOT}/README.md", (s) => s.replace(/pin \`@[0-9]+\.[0-9]+\.[0-9]+\`/g, \`pin \${pin}\`)],
-  ["${ROOT}/commands/designer-setup.md", (s) => s.replace(/with \`@[0-9]+\.[0-9]+\.[0-9]+\`/g, \`with \${pin}\`)],
-];
-for (const [file, transform] of files) {
-  if (fs.existsSync(file)) fs.writeFileSync(file, transform(fs.readFileSync(file, "utf8")));
-}
-NODE
-
-echo "==> Validate Claude plugin manifest"
-if ! command -v claude >/dev/null 2>&1; then
-  echo "ERROR: 'claude' CLI not found; cannot validate plugin manifest before release." >&2
-  exit 127
+# --- Preflight ---------------------------------------------------------------
+[[ "$(git rev-parse --abbrev-ref HEAD)" == main ]] || die "release from main"
+[[ -z "$(git status --porcelain)" ]] || die "working tree is not clean"
+gh auth status >/dev/null 2>&1 || die "gh is not authenticated"
+if npm view "${PKG_NAME}@${VERSION}" version >/dev/null 2>&1; then
+  die "${PKG_NAME}@${VERSION} is already on npm; choose a new version"
 fi
+git fetch --quiet origin main --tags
+
+# --- Resume: an earlier run committed and tagged but did not finish pushing --
+if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+  [[ "$(git rev-parse "${TAG}^{commit}")" == "$(git rev-parse HEAD)" ]] || die "tag ${TAG} exists on another commit"
+  git merge-base --is-ancestor origin/main HEAD || die "origin/main moved past the release commit"
+  echo "==> ${TAG} already tagged at HEAD; pushing"
+  git push origin HEAD:main
+  git push origin "refs/tags/${TAG}"
+  echo "==> Done. publish.yml publishes ${TAG}."
+  exit 0
+fi
+
+[[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || die "main is not in sync with origin/main"
+command -v claude >/dev/null 2>&1 || die "'claude' CLI not found; it validates the plugin manifest"
+
+# --- Bump, verify, commit ----------------------------------------------------
+RELEASE_FILES=(
+  designer-skill-mcp/package.json designer-skill-mcp/package-lock.json designer-skill-mcp/server.json
+  .claude-plugin/plugin.json .codex-plugin/plugin.json .cursor-plugin/plugin.json
+  mcp.json README.md commands/designer-setup.md
+)
+# Until the release commit exists, any failure restores the version files so a
+# rerun starts from the same clean tree.
+restore_release_files() { git checkout --quiet HEAD -- "${RELEASE_FILES[@]}"; }
+trap 'restore_release_files; echo "release aborted; version files restored" >&2' EXIT
+
+node scripts/versions.mjs sync "$VERSION"
+node scripts/versions.mjs check
 claude plugin validate --strict "$ROOT"
 
-echo "==> Build and test"
-npm run build
-npm test
+(
+  cd "$PKG_DIR"
+  npm ci
+  npm run build
+  git -C "$ROOT" diff --exit-code -- designer-skill-mcp/assets/ || die "generated assets drifted from skills/; commit the sync first"
+  node --test checks/core.mjs
+  npm test
+  node scripts/smoke-tarball.mjs
+)
 
-echo "==> Commit"
-cd "$ROOT"
-git add \
-  designer-skill-mcp/package.json \
-  designer-skill-mcp/package-lock.json \
-  designer-skill-mcp/server.json \
-  .claude-plugin/plugin.json \
-  .codex-plugin/plugin.json \
-  .cursor-plugin/plugin.json \
-  README.md \
-  commands/designer-setup.md
+git add -- "${RELEASE_FILES[@]}"
+unexpected="$(git status --porcelain | grep -v '^M  ' || true)"
+[[ -z "$unexpected" ]] || die "release left unexpected changes: ${unexpected}"
+git commit -m "Release designer-skill-mcp v${VERSION}" -m "$NOTES"
+trap - EXIT
+git tag -a "$TAG" -m "designer-skill-mcp v${VERSION}" -m "$NOTES"
 
-if ! git diff --cached --quiet; then
-  git commit -m "$(cat <<EOF
-Release designer-skill-mcp v${VERSION}.
-
-${NOTES}
-EOF
-)"
-else
-  echo "No version file changes to commit."
-fi
-
-echo "==> Tag ${TAG}"
-git tag -a "$TAG" -m "$(cat <<EOF
-designer-skill-mcp v${VERSION}
-
-${NOTES}
-EOF
-)"
-
-echo "==> Push branch and tag"
-# Direct push to main: relies on repo admins being exempt from main's required
-# status checks (classic protection enforce_admins=off + Repository-admin on the
-# main-hardening ruleset bypass list). Run releases from an admin-authed session
-# (npm whoami / gh auth as elkaix). Non-admin pushes to main stay gated by checks.
-git push origin HEAD
-git push origin "$TAG"
-
-echo "==> Publish to npm"
-cd "$PKG_DIR"
-npm publish --access public
-
-echo "==> Publish to MCP Registry (optional; requires mcp-publisher login)"
-if command -v mcp-publisher >/dev/null 2>&1; then
-  mcp-publisher publish || echo "warn: mcp-publisher publish failed (run manually after login)"
-else
-  echo "skip: mcp-publisher not installed (brew install mcp-publisher)"
-fi
-
-echo "==> Create GitHub release"
-cd "$ROOT"
-gh release create "$TAG" \
-  --title "designer-skill-mcp v${VERSION}" \
-  --notes "$NOTES"
-
-echo "==> Done: ${TAG} published to git, npm, and GitHub."
+# --- Push (publish.yml takes over on the tag) --------------------------------
+# Direct push to main relies on repo admins bypassing main's required checks.
+git push origin HEAD:main
+git push origin "refs/tags/${TAG}"
+echo "==> Done. publish.yml publishes ${TAG} to npm, the MCP registry and GitHub releases."

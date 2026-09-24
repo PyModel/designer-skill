@@ -1,221 +1,262 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 import { profileStep, recordProfileEvent } from '../../profile/profiler.mjs';
-import { parseAnyColor, resolveLengthPx, resolveVarRefs } from '../../rules/checks.mjs';
+import { resolveLengthPx } from '../../rules/checks.mjs';
+import { parseCssColor } from '../../shared/color.mjs';
 
-// ---------------------------------------------------------------------------
-// jsdom CSS-variable border override map
-// ---------------------------------------------------------------------------
-//
-// jsdom's CSSOM silently drops any border shorthand that contains a var()
-// reference — the computed style for the element then shows empty width,
-// empty style, and a default black color. That's enough to hide the most
-// common real-world side-tab pattern in AI-generated pages:
-//
-//   :root { --brand: #87a8ff; }
-//   .card { border-left: 5px solid var(--brand); border-radius: 4px; }
-//
-// Real browsers (and therefore the browser detector path) resolve var()
-// natively, so this only affects the Node jsdom path.
-//
-// This pre-pass walks the stylesheets, finds any rule whose per-side or
-// all-sides border property contains var(), resolves the var() against
-// :root-level custom properties (read from the documentElement's computed
-// style, which jsdom DOES handle correctly), and attaches the resolved
-// width+color to every element that matches the rule's selector. The
-// Node-side `checkElementBorders` adapter consumes that map as a fallback
-// whenever jsdom's computed style came back empty.
-//
-// Limitations (intentional, to keep the pass simple):
-//   * Only :root-level custom properties are resolved. Scoped overrides on
-//     descendants are not tracked — uncommon in practice and would require
-//     a per-element cascade walk.
-//   * @media / @supports wrapped rules are ignored (jsdom often mishandles
-//     these anyway).
-//   * The fallback only fills sides that jsdom left empty, so any rule
-//     whose border parses normally still wins via the computed style.
+// The engine never touches the filesystem: linked stylesheets arrive through
+// `options.readStylesheet(href, fromFile)`, owned by the scan's confined reader.
 
-const BORDER_SHORTHAND_RE = /^(\d+(?:\.\d+)?)px\s+(solid|dashed|dotted|double|groove|ridge|inset|outset)\s+(.+)$/i;
-
-// isNeutralColor only understands rgba()/oklch()/lch()/lab()/hsl()/hwb().
-// CSS variables typically hold hex or named colors, so normalize those to
-// rgb() before handing the value off to the shared check. Anything we don't
-// recognise is passed through unchanged — isNeutralColor then treats it as
-// non-neutral, which is the safer default (matches the oklch-era bugfix).
-const NAMED_COLORS = {
-  white: [255, 255, 255], black: [0, 0, 0], gray: [128, 128, 128],
-  grey: [128, 128, 128], silver: [192, 192, 192], red: [255, 0, 0],
-  green: [0, 128, 0], blue: [0, 0, 255], yellow: [255, 255, 0],
-};
-
-function normalizeColorForCheck(value) {
-  if (!value) return value;
-  const v = value.trim();
-  const hex6 = v.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-  if (hex6) {
-    const [r, g, b] = [parseInt(hex6[1], 16), parseInt(hex6[2], 16), parseInt(hex6[3], 16)];
-    return `rgb(${r}, ${g}, ${b})`;
+class EngineLimitError extends Error {
+  constructor(message) {
+    super(message);
+    this.code = 'SCAN_LIMIT';
   }
-  const hex3 = v.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i);
-  if (hex3) {
-    const [r, g, b] = [
-      parseInt(hex3[1] + hex3[1], 16),
-      parseInt(hex3[2] + hex3[2], 16),
-      parseInt(hex3[3] + hex3[3], 16),
-    ];
-    return `rgb(${r}, ${g}, ${b})`;
-  }
-  const named = NAMED_COLORS[v.toLowerCase()];
-  if (named) return `rgb(${named[0]}, ${named[1]}, ${named[2]})`;
-  return v;
 }
 
-function buildBorderOverrideMap(document, window) {
-  const map = new Map();
-  const rootStyle = window.getComputedStyle(document.documentElement);
+// Browsers cap HTML tree depth (Blink: 512); deeper trees are not renderable.
+const MAX_DOM_DEPTH = 512;
+// A custom property's substituted value may not exceed this (var() bombs).
+const MAX_VAR_VALUE_LENGTH = 64 * 1024;
+const MAX_VAR_DEPTH = 32;
 
-  function resolveVar(value, depth = 0) {
-    if (!value || depth > 10 || !value.includes('var(')) return value;
-    return value.replace(
-      /var\(\s*(--[\w-]+)\s*(?:,\s*([^)]+))?\s*\)/g,
-      (_, name, fallback) => {
-        const v = rootStyle.getPropertyValue(name).trim();
-        if (v) return resolveVar(v, depth + 1);
-        if (fallback) return resolveVar(fallback.trim(), depth + 1);
-        return '';
-      }
-    );
-  }
+// ---------------------------------------------------------------------------
+// var() substitution (CSS Variables 1): nested fallbacks, cycle detection,
+// and a size budget. `null` = invalid at computed-value time.
+// ---------------------------------------------------------------------------
 
-  function parseShorthand(text) {
-    const m = text.trim().match(BORDER_SHORTHAND_RE);
-    if (!m) return null;
-    return { width: parseFloat(m[1]), color: normalizeColorForCheck(m[3]) };
-  }
-
-  // Read from the per-property accessors on rule.style. jsdom preserves
-  // each border-* shorthand it parsed, even when the overall cssText has
-  // been truncated (e.g. a `border: 1px solid var(...)` followed by a
-  // `border-left: ...` loses the first declaration but keeps the second).
-  const SIDE_PROPS = [
-    ['borderLeft', 'Left'],
-    ['borderRight', 'Right'],
-    ['borderTop', 'Top'],
-    ['borderBottom', 'Bottom'],
-    ['borderInlineStart', 'Left'],
-    ['borderInlineEnd', 'Right'],
-  ];
-
-  for (const sheet of document.styleSheets) {
-    let rules;
-    try { rules = sheet.cssRules || []; } catch { continue; }
-    for (const rule of rules) {
-      // CSSStyleRule only; skip @media / @keyframes / @supports wrappers.
-      if (rule.type !== 1 || !rule.style || !rule.selectorText) continue;
-
-      const perSide = {};
-
-      for (const [prop, side] of SIDE_PROPS) {
-        const val = rule.style[prop];
-        if (!val || !val.includes('var(')) continue;
-        const parsed = parseShorthand(resolveVar(val));
-        if (parsed && parsed.color) perSide[side] = parsed;
-      }
-
-      // Uniform `border: <w> <style> var(...)` applies to every side the
-      // per-side map didn't already claim.
-      const borderAll = rule.style.border;
-      if (borderAll && borderAll.includes('var(')) {
-        const parsed = parseShorthand(resolveVar(borderAll));
-        if (parsed && parsed.color) {
-          for (const s of ['Top', 'Right', 'Bottom', 'Left']) {
-            if (!perSide[s]) perSide[s] = parsed;
-          }
-        }
-      }
-
-      // Longhand `border-*-color: var(...)` with width/style in separate
-      // declarations. Rare in AI-generated pages, but cheap to cover.
-      for (const [prop, side] of [
-        ['borderLeftColor', 'Left'],
-        ['borderRightColor', 'Right'],
-        ['borderTopColor', 'Top'],
-        ['borderBottomColor', 'Bottom'],
-      ]) {
-        const val = rule.style[prop];
-        if (!val || !val.includes('var(')) continue;
-        const resolved = resolveVar(val).trim();
-        if (!resolved) continue;
-        // Width may or may not come from this rule — that's fine; the
-        // adapter only substitutes the color when jsdom left it as a
-        // literal var() string.
-        if (!perSide[side]) perSide[side] = { width: 0, color: normalizeColorForCheck(resolved) };
-      }
-
-      if (Object.keys(perSide).length === 0) continue;
-
-      let matched;
-      try { matched = document.querySelectorAll(rule.selectorText); }
-      catch { continue; }
-
-      for (const el of matched) {
-        const existing = map.get(el);
-        if (existing) {
-          // Later rules overwrite earlier ones — approximates source-order
-          // cascade for equal-specificity rules and is good enough for the
-          // uncontested var()-dropped sides we're trying to recover.
-          Object.assign(existing, perSide);
-        } else {
-          map.set(el, { ...perSide });
-        }
-      }
+function findClosingParen(text, open) {
+  let depth = 0;
+  let quote = '';
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === quote) quote = '';
+      continue;
     }
+    if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '(') depth++;
+    else if (ch === ')' && --depth === 0) return i;
   }
-
-  return map;
+  return -1;
 }
 
-// Strip `@layer NAME { … }` wrappers from a CSS / HTML source, leaving
-// the inner rules as flat CSS. jsdom doesn't implement CSS @layer, so
-// any rule inside a layer block becomes invisible to getComputedStyle.
-// Tailwind v4 makes this ubiquitous: every utility class lives in
-// `@layer utilities`, and Preflight lives in `@layer base`. Without
-// unwrapping, every Tailwind-styled element returns empty computed
-// styles. We walk the source character-by-character, balancing braces
-// so we correctly handle nested style rules inside the layer block.
-function unwrapCssAtLayer(source) {
-  if (!source || !source.includes('@layer')) return source;
-  // Find `@layer <name>? {` openers. The match starts at the @, and
-  // we then balance braces from the opening { onward.
-  const re = /@layer\b[^{;]*\{/g;
+function splitTopLevelComma(text) {
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    else if (ch === ',' && depth === 0) return [text.slice(0, i), text.slice(i + 1)];
+  }
+  return [text, undefined];
+}
+
+function substituteVars(raw, customProps, depth = 0, active = new Set()) {
+  if (typeof raw !== 'string' || !raw.includes('var(')) return raw;
+  if (depth > MAX_VAR_DEPTH) return null;
   let out = '';
-  let lastIdx = 0;
-  let m;
-  while ((m = re.exec(source)) !== null) {
-    const openStart = m.index;
-    const openEnd = m.index + m[0].length; // position right after `{`
-    let depth = 1;
-    let i = openEnd;
-    while (i < source.length && depth > 0) {
-      const c = source.charCodeAt(i);
-      if (c === 0x7b /* { */) depth++;
-      else if (c === 0x7d /* } */) depth--;
-      i++;
+  let index = 0;
+  const lower = raw.toLowerCase();
+  while (index < raw.length) {
+    const start = lower.indexOf('var(', index);
+    if (start === -1) { out += raw.slice(index); break; }
+    const end = findClosingParen(raw, start + 3);
+    if (end === -1) return null;
+    out += raw.slice(index, start);
+    const [nameRaw, fallback] = splitTopLevelComma(raw.slice(start + 4, end));
+    const name = nameRaw.trim();
+    let value = null;
+    if (!active.has(name)) {
+      const defined = customProps.get(name);
+      if (defined !== undefined && defined !== null) value = defined;
     }
-    if (depth !== 0) {
-      // Unbalanced — bail and return source unchanged.
-      return source;
+    if (value === null && fallback !== undefined) {
+      value = substituteVars(fallback.trim(), customProps, depth + 1, active);
     }
-    // Emit everything before the @layer, then the inner contents
-    // (between the opening { and the matched closing }), then advance.
-    out += source.slice(lastIdx, openStart);
-    out += source.slice(openEnd, i - 1); // i-1 = position of the closing }
-    lastIdx = i;
-    re.lastIndex = i;
+    if (value === null) return null;
+    out += value;
+    if (out.length > MAX_VAR_VALUE_LENGTH) return null;
+    index = end + 1;
   }
-  out += source.slice(lastIdx);
-  return out;
+  return out.length > MAX_VAR_VALUE_LENGTH ? null : out;
+}
+
+// ---------------------------------------------------------------------------
+// Media queries (Media Queries 4) evaluated against one declared static
+// environment. Unknown features evaluate false, as in browsers.
+// ---------------------------------------------------------------------------
+
+const STATIC_MEDIA_ENV = Object.freeze({
+  type: 'screen',
+  width: 1280,
+  height: 800,
+  resolution: 1,
+  features: {
+    orientation: 'landscape',
+    'prefers-color-scheme': 'light',
+    'prefers-reduced-motion': 'no-preference',
+    'prefers-contrast': 'no-preference',
+    'prefers-reduced-transparency': 'no-preference',
+    'forced-colors': 'none',
+    'inverted-colors': 'none',
+    hover: 'hover',
+    'any-hover': 'hover',
+    pointer: 'fine',
+    'any-pointer': 'fine',
+    scripting: 'enabled',
+    update: 'fast',
+    'display-mode': 'browser',
+    'color-gamut': 'srgb',
+    grid: '0',
+    color: '8',
+    monochrome: '0',
+  },
+});
+
+function mediaLengthPx(text) {
+  const m = String(text).trim().match(/^(-?\d*\.?\d+)(px|em|rem)?$/i);
+  if (!m) return null;
+  const value = Number(m[1]);
+  const unit = (m[2] || '').toLowerCase();
+  if (!unit) return value === 0 ? 0 : null;
+  return unit === 'px' ? value : value * 16;
+}
+
+function mediaFeatureValue(name, env) {
+  if (name === 'width') return { kind: 'length', value: env.width };
+  if (name === 'height') return { kind: 'length', value: env.height };
+  if (name === 'aspect-ratio') return { kind: 'ratio', value: env.width / env.height };
+  if (name === 'resolution') return { kind: 'resolution', value: env.resolution };
+  if (name === 'color' || name === 'monochrome' || name === 'grid') return { kind: 'number', value: Number(env.features[name]) };
+  if (Object.hasOwn(env.features, name)) return { kind: 'keyword', value: env.features[name] };
+  return null;
+}
+
+function parseMediaOperand(kind, text) {
+  const t = String(text).trim().toLowerCase();
+  if (kind === 'length') return mediaLengthPx(t);
+  if (kind === 'ratio') {
+    const m = t.match(/^(\d*\.?\d+)\s*(?:\/\s*(\d*\.?\d+))?$/);
+    return m ? Number(m[1]) / Number(m[2] || 1) : null;
+  }
+  if (kind === 'resolution') {
+    const m = t.match(/^(\d*\.?\d+)(dppx|x|dpi|dpcm)$/);
+    if (!m) return null;
+    const v = Number(m[1]);
+    return m[2] === 'dpi' ? v / 96 : m[2] === 'dpcm' ? (v * 2.54) / 96 : v;
+  }
+  if (kind === 'number') return /^\d+$/.test(t) ? Number(t) : null;
+  return t;
+}
+
+function compareMedia(left, op, right) {
+  if (left === null || right === null) return false;
+  if (op === '<') return left < right;
+  if (op === '<=') return left <= right;
+  if (op === '>') return left > right;
+  if (op === '>=') return left >= right;
+  return left === right;
+}
+
+function evalMediaFeature(text, env) {
+  const t = text.trim().toLowerCase();
+  const plain = t.match(/^([a-z-]+)\s*(?::\s*(.+))?$/);
+  if (plain) {
+    let name = plain[1];
+    let op = '=';
+    if (name.startsWith('min-')) { name = name.slice(4); op = '>='; }
+    else if (name.startsWith('max-')) { name = name.slice(4); op = '<='; }
+    const feature = mediaFeatureValue(name, env);
+    if (!feature) return false;
+    if (plain[2] === undefined) {
+      if (op !== '=') return false;
+      return feature.kind === 'keyword' ? feature.value !== 'none' && feature.value !== 'no-preference' : feature.value !== 0;
+    }
+    if (feature.kind === 'keyword') return op === '=' && feature.value === plain[2].trim();
+    return compareMedia(feature.value, op, parseMediaOperand(feature.kind, plain[2]));
+  }
+  const range = t.match(/^(.+?)\s*(<=|>=|<|>|=)\s*(.+?)(?:\s*(<=|>=|<|>|=)\s*(.+))?$/);
+  if (!range) return false;
+  const [, a, op1, b, op2, c] = range;
+  const flip = { '<': '>', '<=': '>=', '>': '<', '>=': '<=', '=': '=' };
+  if (/^[a-z-]+$/.test(b) && c !== undefined) {
+    const feature = mediaFeatureValue(b, env);
+    if (!feature || feature.kind === 'keyword') return false;
+    return compareMedia(parseMediaOperand(feature.kind, a), op1, feature.value) &&
+      compareMedia(feature.value, op2, parseMediaOperand(feature.kind, c));
+  }
+  if (/^[a-z-]+$/.test(a)) {
+    const feature = mediaFeatureValue(a, env);
+    if (!feature || feature.kind === 'keyword') return false;
+    return compareMedia(feature.value, op1, parseMediaOperand(feature.kind, b));
+  }
+  if (/^[a-z-]+$/.test(b)) {
+    const feature = mediaFeatureValue(b, env);
+    if (!feature || feature.kind === 'keyword') return false;
+    return compareMedia(feature.value, flip[op1], parseMediaOperand(feature.kind, a));
+  }
+  return false;
+}
+
+// condition := 'not' group | group (('and'|'or') group)*
+function evalMediaCondition(text, env) {
+  const tokens = [];
+  let i = 0;
+  const src = text.trim();
+  while (i < src.length) {
+    const ch = src[i];
+    if (/\s/.test(ch)) { i++; continue; }
+    if (ch === '(') {
+      const end = findClosingParen(src, i);
+      if (end === -1) return false;
+      tokens.push({ group: src.slice(i + 1, end) });
+      i = end + 1;
+      continue;
+    }
+    const word = src.slice(i).match(/^[a-z-]+/i);
+    if (!word) return false;
+    tokens.push({ word: word[0].toLowerCase() });
+    i += word[0].length;
+  }
+  const evalGroup = (token) => {
+    if (!token?.group) return false;
+    const inner = token.group.trim();
+    return /^\(|^not\s/i.test(inner) ? evalMediaCondition(inner, env) : evalMediaFeature(inner, env);
+  };
+  if (tokens[0]?.word === 'not') return tokens.length === 2 && !evalGroup(tokens[1]);
+  let result = evalGroup(tokens[0]);
+  for (let k = 1; k < tokens.length; k += 2) {
+    const op = tokens[k]?.word;
+    const next = evalGroup(tokens[k + 1]);
+    if (op === 'and') result = result && next;
+    else if (op === 'or') result = result || next;
+    else return false;
+  }
+  return result;
+}
+
+function mediaQueryMatches(query, env) {
+  let q = query.trim().toLowerCase();
+  if (!q) return true;
+  let negate = false;
+  if (q.startsWith('not ')) { negate = true; q = q.slice(4).trim(); }
+  else if (q.startsWith('only ')) q = q.slice(5).trim();
+  let result;
+  if (q.startsWith('(')) {
+    result = evalMediaCondition(q, env);
+  } else {
+    const m = q.match(/^([a-z-]+)\s*(?:and\s+([\s\S]+))?$/);
+    if (!m) return false;
+    const typeMatches = m[1] === 'all' || m[1] === env.type;
+    result = typeMatches && (m[2] === undefined || evalMediaCondition(m[2], env));
+  }
+  return negate ? !result : result;
+}
+
+function mediaListMatches(list, env = STATIC_MEDIA_ENV) {
+  const text = String(list || '').trim();
+  if (!text) return true;
+  return splitCssList(text).some((query) => mediaQueryMatches(query, env));
 }
 
 // ---------------------------------------------------------------------------
@@ -339,18 +380,6 @@ const STATIC_PROP_MAP = {
   'overflow-y': 'overflowY',
 };
 
-const STATIC_NAMED_COLORS = {
-  black: { r: 0, g: 0, b: 0, a: 1 },
-  white: { r: 255, g: 255, b: 255, a: 1 },
-  transparent: { r: 0, g: 0, b: 0, a: 0 },
-  gray: { r: 128, g: 128, b: 128, a: 1 },
-  grey: { r: 128, g: 128, b: 128, a: 1 },
-  silver: { r: 192, g: 192, b: 192, a: 1 },
-  red: { r: 255, g: 0, b: 0, a: 1 },
-  green: { r: 0, g: 128, b: 0, a: 1 },
-  blue: { r: 0, g: 0, b: 255, a: 1 },
-};
-
 function splitCssList(value) {
   const parts = [];
   let depth = 0, quote = '', start = 0;
@@ -410,45 +439,55 @@ function staticColorToCss(c) {
 }
 
 function parseStaticColor(value) {
-  const parsed = parseAnyColor(value);
-  if (parsed) return parsed;
-  const named = STATIC_NAMED_COLORS[String(value || '').trim().toLowerCase()];
-  return named ? { ...named } : null;
+  return parseCssColor(String(value || ''));
 }
 
+// First color-like token of a shorthand (background/border/outline).
 function extractStaticColor(value) {
   if (!value) return '';
-  const raw = String(value).trim();
-  if (/^var\(/i.test(raw)) return raw;
-  const colorLike = raw.match(/(?:rgba?\([^)]+\)|oklch\([^)]+\)|oklab\([^)]+\)|lch\([^)]+\)|lab\([^)]+\)|hsla?\([^)]+\)|hwb\([^)]+\)|#[0-9a-f]{3,8}\b|\b(?:black|white|gray|grey|silver|red|green|blue|transparent)\b)/i);
-  if (!colorLike) return '';
-  return colorLike[0];
+  for (const token of splitCssTokens(String(value).trim())) {
+    if (/^var\(/i.test(token) || /^currentcolor$/i.test(token) || parseCssColor(token)) return token;
+  }
+  return '';
 }
 
+const COLOR_PROPS = new Set([
+  'color', 'backgroundColor', 'outlineColor',
+  'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor',
+]);
+
+// Returns the computed value, or null when the declaration is invalid at
+// computed-value time (unresolvable var()), which makes the property unset.
 function normalizeStaticCssValue(prop, value, customProps, parentStyle, currentStyle = null) {
-  let resolved = resolveVarRefs(String(value || '').trim(), customProps);
-  if (resolved === 'inherit') return parentStyle?.[prop] || STATIC_DEFAULT_STYLE[prop] || '';
-  const isModernBorderColor = /^border[A-Z][a-z]+Color$/.test(prop) && /^(?:oklch|oklab|lch|lab|hsl|hwb)\(/i.test(resolved);
-  if (!isModernBorderColor && (/color$/i.test(prop) || prop === 'color' || prop === 'backgroundColor')) {
-    const parsed = parseStaticColor(resolved);
-    if (parsed) resolved = staticColorToCss(parsed);
+  const resolved = substituteVars(String(value || '').trim(), customProps);
+  if (resolved === null) return null;
+  let out = resolved.trim();
+  if (out === 'inherit') return parentStyle?.[prop] || STATIC_DEFAULT_STYLE[prop] || '';
+  if (out === 'initial') return STATIC_DEFAULT_STYLE[prop] ?? '';
+  if (out === 'unset' || out === 'revert' || out === 'revert-layer') {
+    return STATIC_INHERITED_PROPS.has(prop) ? (parentStyle?.[prop] || STATIC_DEFAULT_STYLE[prop] || '') : (STATIC_DEFAULT_STYLE[prop] ?? '');
+  }
+  if (COLOR_PROPS.has(prop)) {
+    if (/^currentcolor$/i.test(out)) return prop === 'color' ? (parentStyle?.color || STATIC_DEFAULT_STYLE.color) : 'currentcolor';
+    const parsed = parseStaticColor(out);
+    if (parsed) out = staticColorToCss(parsed);
   }
   if (prop === 'fontSize') {
     const base = parseFloat(parentStyle?.fontSize) || 16;
-    const px = resolveLengthPx(resolved, base);
-    if (px != null) resolved = `${px}px`;
+    const px = resolveLengthPx(out, base);
+    if (px != null) out = `${px}px`;
   }
   if (prop === 'letterSpacing') {
     const base = parseFloat(currentStyle?.fontSize || parentStyle?.fontSize) || 16;
-    const px = resolveLengthPx(resolved, base);
-    if (px != null) resolved = `${px}px`;
+    const px = resolveLengthPx(out, base);
+    if (px != null) out = `${px}px`;
   }
-  if (prop === 'lineHeight' && resolved !== 'normal') {
+  if (prop === 'lineHeight' && out !== 'normal') {
     const base = parseFloat(currentStyle?.fontSize || parentStyle?.fontSize) || 16;
-    const px = resolveLengthPx(resolved, base);
-    if (px != null) resolved = `${px}px`;
+    const px = resolveLengthPx(out, base);
+    if (px != null) out = `${px}px`;
   }
-  return resolved;
+  return out;
 }
 
 function expandStaticBoxValues(tokens) {
@@ -630,10 +669,27 @@ function expandStaticDeclaration(prop, value) {
   return [];
 }
 
+// Lexicographic layer comparison; returns sign(b - a). Unlayered = Infinity.
+function compareLayerKeys(a = [Infinity], b = [Infinity]) {
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = a[i] ?? -Infinity;
+    const y = b[i] ?? -Infinity;
+    if (x !== y) return y > x ? 1 : -1;
+  }
+  return 0;
+}
+
+// CSS Cascade 5 order: importance, element-attached (inline), layers
+// (reversed for !important), specificity, source order. True when b wins.
 function compareStaticPriority(a, b) {
   if (!a) return true;
   if (!!b.important !== !!a.important) return !!b.important;
   if (!!b.inline !== !!a.inline) return !!b.inline;
+  if (!b.inline) {
+    const layer = compareLayerKeys(a.layer, b.layer);
+    if (layer !== 0) return b.important ? layer < 0 : layer > 0;
+  }
   for (let i = 0; i < 3; i++) {
     if ((b.specificity[i] || 0) !== (a.specificity[i] || 0)) {
       return (b.specificity[i] || 0) > (a.specificity[i] || 0);
@@ -678,19 +734,49 @@ function parseStaticStyleAttribute(styleText, orderBase = 0) {
   return decls;
 }
 
-function collectStaticCssRules(cssText, csstree) {
+function createCascadeState() {
+  return { order: 0, layers: { children: new Map(), next: 0 }, anonymousLayers: 0, gaps: [] };
+}
+
+function declareLayer(parent, dottedName) {
+  let node = parent.node;
+  const path = [...parent.path];
+  for (const part of dottedName.split('.')) {
+    const name = part.trim();
+    let child = node.children.get(name);
+    if (!child) {
+      child = { index: node.next++, children: new Map(), next: 0 };
+      node.children.set(name, child);
+    }
+    path.push(child.index);
+    node = child;
+  }
+  return { node, path };
+}
+
+const COLOR_AFFECTING_PROP = /(?:^|-)(?:color|background)/i;
+
+function blockAffectsColor(block, csstree) {
+  let affects = false;
+  csstree.walk(block, (node) => {
+    if (node.type === 'Declaration' && COLOR_AFFECTING_PROP.test(node.property)) affects = true;
+  });
+  return affects;
+}
+
+function collectStaticCssRules(cssText, csstree, state = createCascadeState()) {
   const rules = [];
   let ast;
   try {
     ast = csstree.parse(cssText, { positions: false, parseValue: true, parseCustomProperty: false });
   } catch {
+    state.gaps.push({ kind: 'UNRESOLVED_STYLESHEET', detail: 'stylesheet could not be parsed' });
     return rules;
   }
-  let order = 0;
-  const walkList = (list, atRuleStack = []) => {
+  const root = { node: state.layers, path: [] };
+  const walkList = (list, layer) => {
     list?.forEach?.(node => {
       if (node.type === 'Rule' && node.block) {
-        if (atRuleStack.some(name => /keyframes$/i.test(name))) return;
         const selectorText = csstree.generate(node.prelude).trim();
         const declarations = [];
         node.block.children?.forEach?.(child => {
@@ -701,20 +787,42 @@ function collectStaticCssRules(cssText, csstree) {
             important: !!child.important,
           });
         });
+        const layerKey = [...layer.path, Infinity];
         for (const selector of splitCssList(selectorText)) {
-          if (selector) rules.push({ selector, declarations, specificity: staticSpecificity(selector), order: order++ });
+          if (selector) rules.push({ selector, declarations, specificity: staticSpecificity(selector), order: state.order++, layer: layerKey });
         }
         return;
       }
-      if (node.type === 'Atrule' && node.block) {
-        const name = String(node.name || '').toLowerCase();
-        if (name === 'media' || name === 'supports' || name === 'layer') {
-          walkList(node.block.children, [...atRuleStack, name]);
+      if (node.type !== 'Atrule') return;
+      const name = String(node.name || '').toLowerCase();
+      const prelude = node.prelude ? csstree.generate(node.prelude).trim() : '';
+      if (name === 'layer') {
+        if (!node.block) {
+          for (const layerName of splitCssList(prelude)) declareLayer(layer, layerName);
+          return;
         }
+        const target = prelude ? declareLayer(layer, prelude) : declareLayer(layer, `\u0000anonymous-${state.anonymousLayers++}`);
+        walkList(node.block.children, target);
+        return;
+      }
+      if (name === 'media') {
+        if (node.block && mediaListMatches(prelude)) walkList(node.block.children, layer);
+        return;
+      }
+      if (name === 'supports') {
+        if (node.block) walkList(node.block.children, layer);
+        return;
+      }
+      if (name === 'import') {
+        state.gaps.push({ kind: 'UNRESOLVED_STYLESHEET', detail: `@import ${prelude} is not followed` });
+        return;
+      }
+      if ((name === 'container' || name === 'scope') && node.block && blockAffectsColor(node.block, csstree)) {
+        state.gaps.push({ kind: 'UNRESOLVED_STYLESHEET', detail: `@${name} ${prelude} depends on rendered layout` });
       }
     });
   };
-  walkList(ast.children);
+  walkList(ast.children, root);
   return rules;
 }
 
@@ -747,7 +855,16 @@ class StaticElement {
     });
   }
   get textContent() {
-    return this._doc.domutils.textContent(this.node);
+    let out = '';
+    const stack = [this.node];
+    while (stack.length) {
+      const node = stack.pop();
+      if (node.type === 'text' || node.type === 'cdata') out += node.data || '';
+      else if (node.children && node.type !== 'comment') {
+        for (let i = node.children.length - 1; i >= 0; i--) stack.push(node.children[i]);
+      }
+    }
+    return out;
   }
   get className() {
     return this.getAttribute('class') || '';
@@ -802,7 +919,6 @@ class StaticDocument {
     this.selectAll = modules.selectAll;
     this.selectOne = modules.selectOne;
     this.is = modules.is;
-    this.domutils = modules.domutils;
     this._wrappers = new WeakMap();
     this._styleMap = new WeakMap();
   }
@@ -843,56 +959,118 @@ class StaticDocument {
   }
 }
 
-function makeStaticStyle(values = {}) {
+function makeStaticStyle(values = {}, unevaluable = null) {
   const style = { ...STATIC_DEFAULT_STYLE, ...values };
   style.getPropertyValue = (prop) => {
     const key = cssPropToCamel(prop);
     return style[key] || style[prop] || '';
   };
+  if (unevaluable?.size) Object.defineProperty(style, '__unevaluable', { value: unevaluable, enumerable: false });
   return style;
 }
 
-function buildStaticWindow(staticDoc) {
+function buildStaticWindow(staticDoc, gaps = []) {
   return {
     document: staticDoc,
     getComputedStyle: (el) => staticDoc.getStyle(el),
+    reportGap: (gap) => gaps.push(gap),
   };
 }
 
-function collectStaticCssText(root, fileDir, profile, filePath, modules) {
-  const styleTexts = [];
-  for (const styleEl of modules.selectAll('style', root.children || [])) {
-    styleTexts.push(modules.domutils.textContent(styleEl));
+// Font-CSS APIs only serve @font-face rules; they cannot change colors,
+// clipping or layout, so skipping them does not reduce rule coverage.
+const FONT_ONLY_STYLESHEET_HOSTS = new Set(['fonts.googleapis.com', 'fonts.bunny.net', 'use.typekit.net', 'fonts.cdnfonts.com']);
+
+function isFontOnlyStylesheet(href) {
+  try {
+    return FONT_ONLY_STYLESHEET_HOSTS.has(new URL(href, 'https://placeholder.invalid/').hostname);
+  } catch {
+    return false;
   }
-  const links = modules.selectAll('link', root.children || []);
-  for (const link of links) {
-    const rel = link.attribs?.rel || '';
-    const href = link.attribs?.href || '';
-    if (!/\bstylesheet\b/i.test(rel) || !href || /^(https?:)?\/\//i.test(href)) continue;
-    const cssPath = path.resolve(fileDir, href);
-    try {
-      const css = profileStep(profile, {
-        engine: 'static-html',
-        phase: 'preprocess',
-        ruleId: 'inline-linked-stylesheet',
-        target: filePath,
-        detail: href,
-      }, () => fs.readFileSync(cssPath, 'utf-8'));
-      styleTexts.push(css);
-    } catch { /* skip unreadable */ }
-  }
-  return styleTexts.join('\n');
 }
 
-function buildStaticStyleMap(root, staticDoc, cssText, modules, profile, filePath) {
+function elementText(node) {
+  let out = '';
+  for (const child of node.children || []) if (child.type === 'text') out += child.data || '';
+  return out;
+}
+
+// <style> and <link rel=stylesheet> in document order (their cascade order).
+// Linked sheets are read only through options.readStylesheet.
+function collectStaticStylesheets(root, modules, filePath, options = {}) {
+  const sheets = [];
+  const gaps = [];
+  for (const node of modules.selectAll('style, link', root.children || [])) {
+    const media = node.attribs?.media;
+    if (media && !mediaListMatches(media)) continue;
+    if (node.name === 'style') {
+      sheets.push({ css: elementText(node), source: null });
+      continue;
+    }
+    const rel = String(node.attribs?.rel || '').toLowerCase().split(/\s+/);
+    if (!rel.includes('stylesheet') || rel.includes('alternate')) continue;
+    const href = String(node.attribs?.href || '').trim();
+    if (!href || isFontOnlyStylesheet(href)) continue;
+    const result = options.readStylesheet
+      ? options.readStylesheet(href, filePath)
+      : { ok: false, reason: 'no stylesheet reader' };
+    if (result.ok) sheets.push({ css: result.css, source: result.path });
+    else gaps.push({ kind: 'UNRESOLVED_STYLESHEET', detail: `${href}: ${result.reason}` });
+  }
+  return { sheets, gaps };
+}
+
+function indexNodes(allNodes) {
+  const byId = new Map();
+  const byClass = new Map();
+  const byTag = new Map();
+  const push = (map, key, node) => {
+    let list = map.get(key);
+    if (!list) map.set(key, (list = []));
+    list.push(node);
+  };
+  for (const node of allNodes) {
+    push(byTag, node.name, node);
+    const id = node.attribs?.id;
+    if (id) push(byId, id, node);
+    for (const cls of String(node.attribs?.class || '').split(/\s+/)) if (cls) push(byClass, cls, node);
+  }
+  return { byId, byClass, byTag };
+}
+
+// Candidate elements from the rightmost compound selector; null = all.
+function selectorCandidates(selector, index) {
+  let depth = 0;
+  let i = selector.length - 1;
+  for (; i >= 0; i--) {
+    const ch = selector[i];
+    if (ch === ')' || ch === ']') depth++;
+    else if (ch === '(' || ch === '[') depth--;
+    else if (depth === 0 && (ch === ' ' || ch === '>' || ch === '+' || ch === '~' || ch === '\t' || ch === '\n')) break;
+  }
+  const compound = selector.slice(i + 1).trim();
+  if (!compound || compound.includes('\\') || compound.includes('|')) return null;
+  const bare = compound.replace(/\([^()]*\)/g, '').replace(/\[[^\]]*\]/g, '');
+  const id = bare.match(/#([\w-]+)/);
+  if (id) return index.byId.get(id[1]) || [];
+  const cls = bare.match(/\.([\w-]+)/);
+  if (cls) return index.byClass.get(cls[1]) || [];
+  const tag = bare.match(/^([a-zA-Z][\w-]*)/);
+  if (tag) return index.byTag.get(tag[1].toLowerCase()) || [];
+  return null;
+}
+
+function buildStaticStyleMap(root, staticDoc, sheets, modules, profile, filePath, gaps = []) {
   const specified = new Map();
   const allNodes = modules.selectAll('*', root.children || []);
+  const state = createCascadeState();
   const rules = profileStep(profile, {
     engine: 'static-html',
     phase: 'parse-css',
     ruleId: 'css-rules',
     target: filePath,
-  }, () => collectStaticCssRules(cssText, modules.csstree));
+  }, () => sheets.flatMap((sheet) => collectStaticCssRules(sheet.css, modules.csstree, state)));
+  gaps.push(...state.gaps);
 
   profileStep(profile, {
     engine: 'static-html',
@@ -900,10 +1078,15 @@ function buildStaticStyleMap(root, staticDoc, cssText, modules, profile, filePat
     ruleId: 'css-selectors',
     target: filePath,
   }, () => {
+    const index = indexNodes(allNodes);
+    const compiled = new Map();
     for (const rule of rules) {
       let matched;
       try {
-        matched = modules.selectAll(rule.selector, root.children || []);
+        let test = compiled.get(rule.selector);
+        if (!test) compiled.set(rule.selector, (test = modules.compile(rule.selector)));
+        const candidates = selectorCandidates(rule.selector, index) ?? allNodes;
+        matched = candidates.filter((node) => test(node));
       } catch {
         recordProfileEvent(profile, {
           engine: 'static-html',
@@ -922,13 +1105,14 @@ function buildStaticStyleMap(root, staticDoc, cssText, modules, profile, filePat
             important: decl.important,
             specificity: rule.specificity,
             order: rule.order,
+            layer: rule.layer,
             inline: false,
           });
         }
       }
     }
 
-    let inlineOrder = rules.length + 1;
+    let inlineOrder = state.order + 1;
     for (const node of allNodes) {
       const styleText = node.attribs?.style;
       if (!styleText) continue;
@@ -944,26 +1128,32 @@ function buildStaticStyleMap(root, staticDoc, cssText, modules, profile, filePat
     }
   });
 
-  const computeNode = (node, parentStyle = null, parentCustom = new Map()) => {
+  const computeNode = (node, parentStyle, parentCustom) => {
     const specifiedMap = specified.get(node) || new Map();
     const customProps = new Map(parentCustom);
     for (const [prop, decl] of specifiedMap) {
-      if (prop.startsWith('--')) customProps.set(prop, resolveVarRefs(decl.value, customProps));
+      if (prop.startsWith('--')) customProps.set(prop, substituteVars(decl.value, customProps));
     }
     const values = {};
     for (const prop of Object.keys(STATIC_DEFAULT_STYLE)) {
       if (STATIC_INHERITED_PROPS.has(prop) && parentStyle?.[prop] != null) values[prop] = parentStyle[prop];
       else values[prop] = STATIC_DEFAULT_STYLE[prop];
     }
-    for (const [prop, decl] of specifiedMap) {
-      if (prop.startsWith('--')) continue;
-      values[prop] = normalizeStaticCssValue(prop, decl.value, customProps, parentStyle, values);
+    const ordered = [...specifiedMap].filter(([prop]) => !prop.startsWith('--'));
+    ordered.sort(([a], [b]) => (a === 'color' ? -1 : b === 'color' ? 1 : 0));
+    for (const [prop, decl] of ordered) {
+      const value = normalizeStaticCssValue(prop, decl.value, customProps, parentStyle, values);
+      if (value !== null) values[prop] = value;
     }
-    const style = makeStaticStyle(values);
+    const unevaluable = new Set();
+    for (const prop of COLOR_PROPS) {
+      if (values[prop] === 'currentcolor') values[prop] = values.color;
+      const value = values[prop];
+      if (value && !/^rgba?\(/.test(value)) unevaluable.add(prop);
+    }
+    const style = makeStaticStyle(values, unevaluable);
     staticDoc.setStyle(node, style);
-    for (const child of node.children || []) {
-      if (child.type === 'tag') computeNode(child, style, customProps);
-    }
+    return { style, customProps };
   };
 
   profileStep(profile, {
@@ -972,22 +1162,33 @@ function buildStaticStyleMap(root, staticDoc, cssText, modules, profile, filePat
     ruleId: 'compute-styles',
     target: filePath,
   }, () => {
-    for (const child of root.children || []) {
-      if (child.type === 'tag') computeNode(child);
+    const stack = [];
+    for (let i = (root.children || []).length - 1; i >= 0; i--) {
+      const child = root.children[i];
+      if (child.type === 'tag') stack.push([child, null, new Map(), 1]);
+    }
+    while (stack.length) {
+      const [node, parentStyle, parentCustom, depth] = stack.pop();
+      if (depth > MAX_DOM_DEPTH) {
+        throw new EngineLimitError(`HTML nesting exceeds ${MAX_DOM_DEPTH} levels in ${filePath}.`);
+      }
+      const { style, customProps } = computeNode(node, parentStyle, parentCustom);
+      const children = node.children || [];
+      for (let i = children.length - 1; i >= 0; i--) {
+        if (children[i].type === 'tag') stack.push([children[i], style, customProps, depth + 1]);
+      }
     }
   });
 }
 
 export {
-  BORDER_SHORTHAND_RE,
-  NAMED_COLORS,
-  normalizeColorForCheck,
-  buildBorderOverrideMap,
-  unwrapCssAtLayer,
+  EngineLimitError,
+  STATIC_MEDIA_ENV,
   STATIC_INHERITED_PROPS,
   STATIC_DEFAULT_STYLE,
   STATIC_PROP_MAP,
-  STATIC_NAMED_COLORS,
+  substituteVars,
+  mediaListMatches,
   splitCssList,
   splitCssTokens,
   cssPropToCamel,
@@ -1005,11 +1206,12 @@ export {
   staticSpecificity,
   applyStaticDeclaration,
   parseStaticStyleAttribute,
+  createCascadeState,
   collectStaticCssRules,
   StaticElement,
   StaticDocument,
   makeStaticStyle,
   buildStaticWindow,
-  collectStaticCssText,
+  collectStaticStylesheets,
   buildStaticStyleMap,
 };

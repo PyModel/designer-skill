@@ -9,15 +9,15 @@ import { fileURLToPath } from "node:url";
 import { scanAntipatterns } from "../src/detect.js";
 
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// Browser engine only; the MCP server never loads it.
-const OPTIONAL_ENGINE_IMPORTS = new Set(["puppeteer"]);
 
 function engineBareImports(dir: string, found = new Set<string>()): Set<string> {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) engineBareImports(path, found);
     else if (/\.m?js$/.test(entry.name)) {
-      for (const [, spec] of readFileSync(path, "utf8").matchAll(/(?:from\s+|import\(\s*)['"]([^'"./][^'"]*)['"]/g)) {
+      // Comment lines are prose, not imports.
+      const code = readFileSync(path, "utf8").split("\n").filter((line) => !/^\s*(?:\/\/|\/?\*)/.test(line)).join("\n");
+      for (const [, spec] of code.matchAll(/(?:from\s+|import\(\s*)['"]([^'"./][^'"]*)['"]/g)) {
         if (!spec.startsWith("node:")) found.add(spec);
       }
     }
@@ -32,7 +32,7 @@ describe("static-html engine dependencies", () => {
   it("declares every package the bundled engine imports", () => {
     const { dependencies } = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
     const missing = [...engineBareImports(join(pkgRoot, "assets/engine"))]
-      .filter((spec) => !OPTIONAL_ENGINE_IMPORTS.has(spec) && !(spec in dependencies));
+      .filter((spec) => !(spec in dependencies));
     expect(missing).toEqual([]);
   });
 

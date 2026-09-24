@@ -1,171 +1,14 @@
 /**
- * CLI-side reader/writer for the unified `.designer-skill` config.
- *
- * The CLI (published to npm) and the skill scripts (bundled into the install)
- * live in separate trees and cannot share runtime code, so this duplicates a
- * small slice of skill/scripts/hook-lib.mjs — the config-path layout, detector
- * ignore semantics, and the `.git/info/exclude` handling. Keep the schema,
- * ignore filtering, and exclude marker in sync if either side changes.
- *
- * Schema (config.json shared / config.local.json gitignored, per-developer):
- *   {
- *     "detector": { "ignoreRules": [], "ignoreFiles": [], "ignoreValues": [], "designSystem": { "enabled": true } },
- *     "hook": { "consent": "accepted" | "declined", ... },
- *     "updateCheck": bool
- *   }
+ * Pure detector-config semantics shared by the scan: ignore-rule filtering,
+ * scoped ignore values, and project-relative glob matching. Reading and
+ * validating `.designer-skill/config*.json` belongs to the scan's policy owner
+ * (src/scope.ts); this module never touches the filesystem.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
-import { join, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-
-export function getConfigPath(root) {
-  return join(root, '.designer-skill', 'config.json');
-}
-
-export function getLocalConfigPath(root) {
-  return join(root, '.designer-skill', 'config.local.json');
-}
-
-function safeReadJson(filePath) {
-  try {
-    const raw = JSON.parse(readFileSync(filePath, 'utf-8'));
-    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : null;
-  } catch {
-    return null;
-  }
-}
-
-function hookSection(raw) {
-  return raw && raw.hook && typeof raw.hook === 'object' && !Array.isArray(raw.hook) ? raw.hook : null;
-}
-
-function detectorSection(raw) {
-  return raw && raw.detector && typeof raw.detector === 'object' && !Array.isArray(raw.detector) ? raw.detector : null;
-}
-
-const DETECTOR_CONFIG_KEYS = new Set(['ignoreRules', 'ignoreFiles', 'ignoreValues', 'designSystem']);
-
-const DEFAULT_DETECTION_CONFIG = Object.freeze({
-  ignoreRules: [],
-  ignoreFiles: [],
-  ignoreValues: [],
-  designSystem: { enabled: true },
-});
-
-function cloneDetectionConfig() {
-  return {
-    ignoreRules: [],
-    ignoreFiles: [],
-    ignoreValues: [],
-    designSystem: { ...DEFAULT_DETECTION_CONFIG.designSystem },
-  };
-}
-
-function cloneRawDetectionConfig() {
-  return {
-    ignoreRules: [],
-    ignoreFiles: [],
-    ignoreValues: [],
-  };
-}
-
-function applyDetectionConfigSource(config, raw) {
-  if (!raw || typeof raw !== 'object') return config;
-  if (raw.designSystem && typeof raw.designSystem === 'object' && !Array.isArray(raw.designSystem)) {
-    config.designSystem = {
-      ...config.designSystem,
-      enabled: raw.designSystem.enabled === false ? false : true,
-    };
-  }
-  if (Array.isArray(raw.ignoreRules)) {
-    config.ignoreRules = uniqueStrings([...config.ignoreRules, ...raw.ignoreRules]);
-  }
-  if (Array.isArray(raw.ignoreFiles)) {
-    config.ignoreFiles = uniqueStrings([...config.ignoreFiles, ...raw.ignoreFiles]);
-  }
-  if (Array.isArray(raw.ignoreValues)) {
-    config.ignoreValues = mergeIgnoreValues(config.ignoreValues, raw.ignoreValues);
-  }
-  return config;
-}
+import { parseCssColor } from '../shared/color.mjs';
 
 function uniqueStrings(values) {
   return Array.from(new Set(values.map(String)));
-}
-
-/**
- * Detector filters shared by `designer-skill detect` and the design hook.
- * `hook.enabled` remains hook lifecycle state; manual CLI scans still run when
- * the hook is disabled, but they honor the same ignore rules and design-system
- * toggle.
- */
-export function readDetectionConfig(root) {
-  const config = cloneDetectionConfig();
-  for (const filePath of [getConfigPath(root), getLocalConfigPath(root)]) {
-    const raw = safeReadJson(filePath);
-    // Back-compat: old builds stored detector filters under hook.*.
-    applyDetectionConfigSource(config, hookSection(raw));
-    applyDetectionConfigSource(config, detectorSection(raw));
-  }
-  return config;
-}
-
-export function readRawDetectionConfig(root, opts = {}) {
-  const raw = safeReadJson(opts.local ? getLocalConfigPath(root) : getConfigPath(root));
-  const config = cloneRawDetectionConfig();
-  applyDetectionConfigSource(config, hookSection(raw));
-  applyDetectionConfigSource(config, detectorSection(raw));
-  return config;
-}
-
-export function writeDetectionConfig(root, detectorConfig, opts = {}) {
-  const filePath = opts.local ? getLocalConfigPath(root) : getConfigPath(root);
-  if (opts.local) ensureConfigGitExclude(root);
-  const existing = safeReadJson(filePath) || {};
-  const existingHook = hookSection(existing);
-  const nextHook = stripDetectorKeys(existingHook);
-  const nextDetector = {
-    ...(detectorSection(existing) || {}),
-    ...normalizeDetectionConfigForWrite(detectorConfig),
-  };
-  const next = {
-    ...existing,
-    detector: nextDetector,
-  };
-  if (nextHook && Object.keys(nextHook).length > 0) {
-    next.hook = nextHook;
-  } else {
-    delete next.hook;
-  }
-  mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
-  return filePath;
-}
-
-function normalizeDetectionConfigForWrite(config) {
-  const out = {};
-  if (Array.isArray(config?.ignoreRules)) {
-    out.ignoreRules = uniqueStrings(config.ignoreRules.map((rule) => normalizeIgnoreRule(rule)).filter(Boolean));
-  }
-  if (Array.isArray(config?.ignoreFiles)) {
-    out.ignoreFiles = uniqueStrings(config.ignoreFiles.filter(v => typeof v === 'string' && v.trim()).map(v => v.trim()));
-  }
-  out.ignoreValues = normalizeIgnoreValueEntries(config?.ignoreValues || []);
-  if (config?.designSystem && typeof config.designSystem === 'object' && !Array.isArray(config.designSystem)) {
-    out.designSystem = {
-      enabled: config.designSystem.enabled === false ? false : true,
-    };
-  }
-  return out;
-}
-
-function stripDetectorKeys(raw) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const out = {};
-  for (const [key, value] of Object.entries(raw)) {
-    if (!DETECTOR_CONFIG_KEYS.has(key)) out[key] = value;
-  }
-  return out;
 }
 
 export function normalizeIgnoreValue(value) {
@@ -188,141 +31,7 @@ function colorIgnoreKey(value) {
 }
 
 function parseIgnoreColor(value) {
-  const text = String(value || '').trim().toLowerCase();
-  if (!text) return null;
-
-  const hex = text.match(/^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
-  if (hex) return parseHexIgnoreColor(hex[1]);
-
-  const rgb = text.match(/^rgba?\((.*)\)$/i);
-  if (rgb) {
-    const parts = splitColorArgs(rgb[1]);
-    if (parts.length < 3 || parts.length > 4) return null;
-    const r = parseRgbChannel(parts[0]);
-    const g = parseRgbChannel(parts[1]);
-    const b = parseRgbChannel(parts[2]);
-    const a = parts[3] === undefined ? 1 : parseAlphaChannel(parts[3]);
-    if ([r, g, b, a].some((v) => v === null)) return null;
-    return { r, g, b, a };
-  }
-
-  const hsl = text.match(/^hsla?\((.*)\)$/i);
-  if (hsl) {
-    const parts = splitColorArgs(hsl[1]);
-    if (parts.length < 3 || parts.length > 4) return null;
-    const h = parseHueChannel(parts[0]);
-    const s = parsePercentChannel(parts[1]);
-    const l = parsePercentChannel(parts[2]);
-    const a = parts[3] === undefined ? 1 : parseAlphaChannel(parts[3]);
-    if ([h, s, l, a].some((v) => v === null)) return null;
-    return hslToRgb(h, s, l, a);
-  }
-
-  return null;
-}
-
-function parseHexIgnoreColor(hex) {
-  if (hex.length === 3 || hex.length === 4) {
-    const r = parseInt(hex[0] + hex[0], 16);
-    const g = parseInt(hex[1] + hex[1], 16);
-    const b = parseInt(hex[2] + hex[2], 16);
-    const a = hex.length === 4 ? parseInt(hex[3] + hex[3], 16) / 255 : 1;
-    return { r, g, b, a };
-  }
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  const a = hex.length === 8 ? parseInt(hex.slice(6, 8), 16) / 255 : 1;
-  return { r, g, b, a };
-}
-
-function splitColorArgs(body) {
-  const text = String(body || '').trim();
-  if (!text) return [];
-  if (text.includes(',')) {
-    const parts = text.split(',').map((part) => part.trim()).filter(Boolean);
-    const last = parts[parts.length - 1];
-    if (last && last.includes('/')) {
-      const split = last.split('/').map((part) => part.trim()).filter(Boolean);
-      return [...parts.slice(0, -1), ...split];
-    }
-    return parts;
-  }
-  return text.replace(/\s*\/\s*/g, ' / ').split(/\s+/).filter((part) => part && part !== '/');
-}
-
-function parseRgbChannel(raw) {
-  const text = String(raw || '').trim();
-  const match = text.match(/^(-?\d*\.?\d+)(%)?$/);
-  if (!match) return null;
-  const value = Number.parseFloat(match[1]);
-  if (!Number.isFinite(value)) return null;
-  const scaled = match[2] ? value * 2.55 : value;
-  if (scaled < 0 || scaled > 255) return null;
-  return Math.round(scaled);
-}
-
-function parseAlphaChannel(raw) {
-  const text = String(raw || '').trim();
-  const match = text.match(/^(-?\d*\.?\d+)(%)?$/);
-  if (!match) return null;
-  const value = Number.parseFloat(match[1]);
-  if (!Number.isFinite(value)) return null;
-  const alpha = match[2] ? value / 100 : value;
-  return alpha >= 0 && alpha <= 1 ? alpha : null;
-}
-
-function parseHueChannel(raw) {
-  const text = String(raw || '').trim();
-  const match = text.match(/^(-?\d*\.?\d+)(deg|rad|turn|grad)?$/);
-  if (!match) return null;
-  const value = Number.parseFloat(match[1]);
-  if (!Number.isFinite(value)) return null;
-  const unit = match[2] || 'deg';
-  if (unit === 'turn') return value * 360;
-  if (unit === 'rad') return value * (180 / Math.PI);
-  if (unit === 'grad') return value * 0.9;
-  return value;
-}
-
-function parsePercentChannel(raw) {
-  const text = String(raw || '').trim();
-  const match = text.match(/^(-?\d*\.?\d+)%$/);
-  if (!match) return null;
-  const value = Number.parseFloat(match[1]);
-  if (!Number.isFinite(value)) return null;
-  return value >= 0 && value <= 100 ? value / 100 : null;
-}
-
-function hslToRgb(hue, saturation, lightness, alpha) {
-  const h = (((hue % 360) + 360) % 360) / 360;
-  if (saturation === 0) {
-    const gray = clampByte(Math.round(lightness * 255));
-    return { r: gray, g: gray, b: gray, a: alpha };
-  }
-  const q = lightness < 0.5
-    ? lightness * (1 + saturation)
-    : lightness + saturation - lightness * saturation;
-  const p = 2 * lightness - q;
-  const toRgb = (t) => {
-    let channel = t;
-    if (channel < 0) channel += 1;
-    if (channel > 1) channel -= 1;
-    if (channel < 1 / 6) return p + (q - p) * 6 * channel;
-    if (channel < 1 / 2) return q;
-    if (channel < 2 / 3) return p + (q - p) * (2 / 3 - channel) * 6;
-    return p;
-  };
-  return {
-    r: clampByte(Math.round(toRgb(h + 1 / 3) * 255)),
-    g: clampByte(Math.round(toRgb(h) * 255)),
-    b: clampByte(Math.round(toRgb(h - 1 / 3) * 255)),
-    a: alpha,
-  };
-}
-
-function clampByte(value) {
-  return Math.min(255, Math.max(0, value));
+  return parseCssColor(String(value || ''));
 }
 
 function ignoreValueMatches(rule, entryValue, findingValue) {
@@ -357,91 +66,119 @@ export function normalizeIgnoreValueEntries(entries) {
   return out;
 }
 
-function mergeIgnoreValues(existing, incoming) {
-  const map = new Map();
-  for (const entry of normalizeIgnoreValueEntries(existing)) {
-    map.set(`${entry.rule}\0${entry.value}\0${ignoreValueFilesKey(entry.files)}`, entry);
+// ---------------------------------------------------------------------------
+// Globs: `**` (any number of segments), `*`, `?`, `{a,b}`. Matching is by
+// path segment (dynamic programming), so cost is O(glob segments × path
+// segments) with no regex backtracking across `/`.
+// ---------------------------------------------------------------------------
+
+const MAX_GLOB_LENGTH = 512;
+const MAX_BRACE_EXPANSIONS = 64;
+const compiledGlobs = new Map();
+
+function expandBraces(glob) {
+  const open = glob.indexOf('{');
+  if (open === -1) return [glob];
+  const close = glob.indexOf('}', open);
+  if (close === -1) return [glob];
+  const out = [];
+  for (const option of glob.slice(open + 1, close).split(',')) {
+    for (const rest of expandBraces(glob.slice(close + 1))) {
+      out.push(glob.slice(0, open) + option + rest);
+      if (out.length > MAX_BRACE_EXPANSIONS) throw new Error('glob expands to too many alternatives');
+    }
   }
-  for (const entry of normalizeIgnoreValueEntries(incoming)) {
-    map.set(`${entry.rule}\0${entry.value}\0${ignoreValueFilesKey(entry.files)}`, entry);
-  }
-  return Array.from(map.values());
+  return out;
 }
 
-function ignoreValueFilesKey(files) {
-  return Array.isArray(files) && files.length > 0 ? files.join('\x1f') : '';
-}
-
-// Glob -> RegExp. Supports `**`, `*`, `?`, and `{a,b}` alternation.
-function globToRegex(glob) {
-  let re = '^';
-  let i = 0;
-  while (i < glob.length) {
-    const c = glob[i];
-    if (c === '*') {
-      if (glob[i + 1] === '*') {
-        re += '.*';
-        i += 2;
-        if (glob[i] === '/') i += 1;
-      } else {
-        re += '[^/]*';
-        i += 1;
+// `*` and `?` within one path segment, matched with the two-pointer
+// wildcard algorithm: O(segment × pattern) worst case, never backtracking
+// exponentially the way a `[^/]*a[^/]*a…` regex does.
+function segmentMatcher(pattern) {
+  return {
+    test(text) {
+      let p = 0, t = 0, star = -1, mark = 0;
+      while (t < text.length) {
+        if (p < pattern.length && (pattern[p] === '?' || pattern[p] === text[t])) { p++; t++; }
+        else if (p < pattern.length && pattern[p] === '*') { star = p++; mark = t; }
+        else if (star !== -1) { p = star + 1; t = ++mark; }
+        else return false;
       }
-    } else if (c === '?') {
-      re += '[^/]';
-      i += 1;
-    } else if (c === '{') {
-      const end = glob.indexOf('}', i);
-      if (end === -1) { re += '\\{'; i += 1; continue; }
-      const parts = glob.slice(i + 1, end).split(',').map((p) => p.replace(/[.+^$()|[\]\\]/g, '\\$&'));
-      re += `(?:${parts.join('|')})`;
-      i = end + 1;
-    } else if (/[.+^$()|[\]\\]/.test(c)) {
-      re += `\\${c}`;
-      i += 1;
-    } else {
-      re += c;
-      i += 1;
-    }
-  }
-  re += '$';
-  return new RegExp(re);
+      while (pattern[p] === '*') p++;
+      return p === pattern.length;
+    },
+  };
 }
 
-export function matchesAnyGlob(filePath, globs) {
-  if (!Array.isArray(globs) || globs.length === 0) return false;
-  const normalized = String(filePath || '').split(sep).join('/');
-  for (const glob of globs) {
-    try {
-      const re = globToRegex(String(glob));
-      if (re.test(normalized)) return true;
-      const base = normalized.split('/').pop();
-      if (re.test(base)) return true;
-    } catch {
-      /* malformed glob, skip */
+function compileGlob(glob) {
+  let compiled = compiledGlobs.get(glob);
+  if (compiled) return compiled;
+  if (glob.length > MAX_GLOB_LENGTH) throw new Error(`glob longer than ${MAX_GLOB_LENGTH} characters`);
+  compiled = expandBraces(glob.replace(/^\.\//, '')).map((variant) => {
+    const segments = [];
+    for (const part of variant.split('/').filter(Boolean)) {
+      if (part === '**' && segments[segments.length - 1] === '**') continue;
+      segments.push(part === '**' ? '**' : segmentMatcher(part));
     }
-  }
-  return false;
+    return { segments, anchored: variant.includes('/') };
+  });
+  compiledGlobs.set(glob, compiled);
+  return compiled;
 }
 
-export function shouldIgnoreDetectionFile(filePath, root, config) {
-  const globs = config?.ignoreFiles || [];
-  if (!Array.isArray(globs) || globs.length === 0) return false;
-  const raw = String(filePath || '').trim();
-  if (!raw) return false;
-  if (matchesAnyGlob(raw, globs)) return true;
+function matchSegments(patterns, parts) {
+  const memo = new Map();
+  const visit = (i, j) => {
+    const key = i * 4096 + j;
+    if (memo.has(key)) return memo.get(key);
+    let result;
+    if (i === patterns.length) result = j === parts.length;
+    else if (patterns[i] === '**') result = visit(i + 1, j) || (j < parts.length && visit(i, j + 1));
+    else result = j < parts.length && patterns[i].test(parts[j]) && visit(i + 1, j + 1);
+    memo.set(key, result);
+    return result;
+  };
+  return visit(0, 0);
+}
 
-  try {
-    const abs = isAbsolute(raw) ? raw : resolve(root, raw);
-    if (matchesAnyGlob(abs, globs)) return true;
-    const rel = relative(root, abs);
-    if (rel && !rel.startsWith('..') && !isAbsolute(rel)) {
-      return matchesAnyGlob(rel, globs);
-    }
-  } catch {
-    /* ignore */
-  }
-  return false;
+function toPosixParts(relPath) {
+  return String(relPath || '').split(/[\\/]+/).filter((part) => part && part !== '.');
+}
+
+/** True when a project-relative path matches a glob. Globs without `/`
+ *  match the basename at any depth (like .gitignore). */
+export function matchesGlob(relPath, glob) {
+  const parts = toPosixParts(relPath);
+  if (!parts.length) return false;
+  return compileGlob(String(glob)).some(({ segments, anchored }) =>
+    anchored ? matchSegments(segments, parts) : matchSegments(segments, parts.slice(-1)));
+}
+
+export function matchesAnyGlob(relPath, globs) {
+  if (!Array.isArray(globs) || globs.length === 0) return false;
+  return globs.some((glob) => matchesGlob(relPath, glob));
+}
+
+/** Throws when a glob cannot be compiled (config validation uses this). */
+export function assertValidGlob(glob) {
+  compileGlob(String(glob));
+}
+
+/** A project-relative file is ignored when any ignoreFiles glob matches it. */
+export function shouldIgnoreDetectionFile(relPath, config) {
+  return matchesAnyGlob(relPath, config?.ignoreFiles);
+}
+
+/** A directory can be pruned when a glob ending in `/**` covers everything under it. */
+export function shouldPruneDetectionDirectory(relDir, config) {
+  const globs = config?.ignoreFiles;
+  if (!Array.isArray(globs)) return false;
+  return globs.some((glob) => {
+    const text = String(glob);
+    if (!text.endsWith('/**')) return false;
+    const prefix = text.slice(0, -3);
+    return prefix !== '' && prefix !== '**' && matchesGlob(relDir, prefix);
+  });
 }
 
 export function filterDetectionFindings(findings, config) {
@@ -470,17 +207,7 @@ function isIgnoredFindingValue(finding, ignoreValues) {
 }
 
 function findingMatchesScopedIgnoreFile(finding, globs) {
-  const filePath = String(finding?.file || '').trim();
-  if (!filePath) return false;
-  if (matchesAnyGlob(filePath, globs)) return true;
-
-  const normalized = filePath.split(sep).join('/');
-  const parts = normalized.split('/').filter(Boolean);
-  for (let i = 0; i < parts.length; i++) {
-    const suffix = parts.slice(i).join('/');
-    if (matchesAnyGlob(suffix, globs)) return true;
-  }
-  return false;
+  return matchesAnyGlob(String(finding?.file || '').trim(), globs);
 }
 
 export function extractFindingIgnoreValue(finding) {
@@ -554,85 +281,3 @@ function cleanIgnoreValueDisplay(value) {
     .replace(/\s+/g, ' ');
 }
 
-/**
- * The recorded design-hook decision: 'accepted' | 'declined' | undefined.
- * config.local.json (per-developer) overrides config.json.
- */
-export function getHookConsent(root) {
-  let consent;
-  for (const filePath of [getConfigPath(root), getLocalConfigPath(root)]) {
-    const hook = hookSection(safeReadJson(filePath));
-    if (hook && (hook.consent === 'accepted' || hook.consent === 'declined')) consent = hook.consent;
-  }
-  return consent;
-}
-
-/**
- * Persist the per-developer decision to config.local.json, preserving any
- * sibling keys, and ensure the file is gitignored.
- */
-export function setHookConsent(root, value) {
-  const filePath = getLocalConfigPath(root);
-  const existing = safeReadJson(filePath) || {};
-  const hook = hookSection(existing) || {};
-  const next = { ...existing, hook: { ...hook, consent: value } };
-  mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
-  ensureConfigGitExclude(root);
-  return filePath;
-}
-
-const EXCLUDE_OPEN = '# designer-skill-config-ignore-start';
-const EXCLUDE_CLOSE = '# designer-skill-config-ignore-end';
-const EXCLUDE_PATTERNS = ['.designer-skill/config.local.json'];
-
-/**
- * Add config.local.json to `.git/info/exclude` so a developer's decision is
- * never committed. Idempotent via marker comments. Best-effort; returns false
- * when there is no resolvable git dir.
- */
-export function ensureConfigGitExclude(root) {
-  try {
-    const gitDir = resolveGitDir(root);
-    if (!gitDir) return false;
-    const target = join(gitDir, 'info', 'exclude');
-    const existing = existsSync(target) ? readFileSync(target, 'utf-8') : '';
-    const block = [EXCLUDE_OPEN, ...EXCLUDE_PATTERNS, EXCLUDE_CLOSE].join('\n');
-    const markerRe = new RegExp(`${escapeRegExp(EXCLUDE_OPEN)}[\\s\\S]*?${escapeRegExp(EXCLUDE_CLOSE)}`);
-    let updated;
-    if (markerRe.test(existing)) {
-      updated = existing.replace(markerRe, block);
-    } else {
-      const prefix = existing.length === 0 ? '' : existing.endsWith('\n') ? existing : `${existing}\n`;
-      updated = `${prefix}${block}\n`;
-    }
-    if (updated !== existing) {
-      mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, updated);
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function resolveGitDir(root) {
-  const dotGit = join(root, '.git');
-  if (!existsSync(dotGit)) return null;
-  try {
-    if (statSync(dotGit).isDirectory()) return dotGit;
-    // A `.git` file (worktree/submodule) points elsewhere: "gitdir: <path>".
-    const match = readFileSync(dotGit, 'utf-8').match(/gitdir:\s*(.+)/);
-    if (match) {
-      const resolved = match[1].trim();
-      return isAbsolute(resolved) ? resolved : join(root, resolved);
-    }
-  } catch {
-    /* fall through */
-  }
-  return null;
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}

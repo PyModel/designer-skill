@@ -18,7 +18,7 @@
 
 [![agents](https://img.shields.io/badge/agents-8-7c3aed?style=flat-square)](#setup)
 [![references](https://img.shields.io/badge/references-41-e11d48?style=flat-square)](#reference)
-[![tools](https://img.shields.io/badge/MCP_tools-10-0ea5e9?style=flat-square)](#tools)
+[![tools](https://img.shields.io/badge/MCP_tools-14-0ea5e9?style=flat-square)](#tools)
 [![detector](https://img.shields.io/badge/detector-44_rules-f59e0b?style=flat-square)](#tools)
 
 <br />
@@ -80,7 +80,7 @@ Using it without Niblet? Drop the "pull screen references and materials from the
 
 ### Check
 
-A 44-rule deterministic detector plus `anti_slop_checklist` runs before shipping. Generic UI gets caught before it lands.
+A 44-rule deterministic detector backs `review_and_gate`, which reports each required rule as ran, unsupported, unresolved or waived before shipping. Generic UI gets caught before it lands.
 
 </td>
 </tr>
@@ -94,7 +94,7 @@ A 44-rule deterministic detector plus `anti_slop_checklist` runs before shipping
 
 </div>
 
-**designer-skill-mcp** is a small [MCP](https://modelcontextprotocol.io) server you add in one line. Your agent gets design tools, reference docs, and a ship gate so UI work stops looking generic.
+**designer-skill-mcp** is a small [MCP](https://modelcontextprotocol.io) server you add in one line. Your agent gets design tools, reference docs, and a static verification gate so UI work stops looking generic.
 
 ```mermaid
 flowchart LR
@@ -117,7 +117,7 @@ Add the server. Ask in plain language. The agent handles the rest.
 
 [![skill](https://img.shields.io/badge/design_skill-15_refs-7c3aed?style=flat-square)](skills/designer-skill/)
 [![skill](https://img.shields.io/badge/ux_designer-26_refs-7c3aed?style=flat-square)](skills/ux-designer/)
-[![mcp](https://img.shields.io/badge/MCP-10_tools-0ea5e9?style=flat-square)](designer-skill-mcp/)
+[![mcp](https://img.shields.io/badge/MCP-14_tools-0ea5e9?style=flat-square)](designer-skill-mcp/)
 
 **Built with it:** [pythinker.com](https://pythinker.com) — a live production site designed end-to-end with this skill.
 
@@ -181,7 +181,7 @@ Same one-liner everywhere. No API key. Repo-root `mcp.json` is the canonical MCP
 }
 ```
 
-**Updates:** `@latest` for newest npm; pin @0.15.0 for teams. Plugin skill content updates separately (`/plugin update …`). Registry: `io.github.pymodel/designer-skill-mcp` (publish via `mcp-publisher` after npm release).
+**Updates:** `@latest` for newest npm; pin `@pymodel/designer-skill-mcp@0.17.0` for teams. Plugin skill content updates separately (`/plugin update …`). Registry: `io.github.pymodel/designer-skill-mcp` (publish via `mcp-publisher` after npm release).
 
 <div align="center">
 
@@ -428,7 +428,7 @@ Use designer-skill to redesign this pricing page without breaking functionality.
 </tr>
 <tr>
 <td align="center" bgcolor="#f59e0b"><font color="#ffffff"><b>6</b></font></td>
-<td bgcolor="#fffbeb">Run the ship gate (<code>anti_slop_checklist</code>) before declaring done.</td>
+<td bgcolor="#fffbeb">Run <code>review_and_gate</code> on changed files before declaring done; a static PASS still means rendered checks are NOT_VERIFIED.</td>
 </tr>
 </table>
 
@@ -448,15 +448,22 @@ Use designer-skill to redesign this pricing page without breaking functionality.
 </tr>
 </thead>
 <tbody>
-<tr><td bgcolor="#f0f9ff"><code>get_design_system</code></td><td bgcolor="#f8fafc">SKILL.md router (call first)</td></tr>
-<tr><td bgcolor="#ecfdf5"><code>load_project_context</code></td><td bgcolor="#f8fafc">Read PRODUCT.md / DESIGN.md from the project</td></tr>
-<tr><td bgcolor="#faf5ff"><code>get_reference</code></td><td bgcolor="#f8fafc">One of fifteen reference files by name</td></tr>
-<tr><td bgcolor="#fff7ed"><code>list_commands</code></td><td bgcolor="#f8fafc">All design verbs with descriptions</td></tr>
-<tr><td bgcolor="#eff6ff"><code>get_command</code></td><td bgcolor="#f8fafc">Full guidance + references for a specific verb</td></tr>
-<tr><td bgcolor="#fdf4ff"><code>dispatch_intent</code></td><td bgcolor="#f8fafc">Map a request → verb(s) + files to read</td></tr>
-<tr><td bgcolor="#fff1f2"><code>detect_antipatterns</code></td><td bgcolor="#f8fafc">Deterministic scan (44 rules), no LLM, no API key</td></tr>
-<tr><td bgcolor="#fffbeb"><code>get_palette_seed</code></td><td bgcolor="#f8fafc">OKLCH brand-seed for greenfield palette work</td></tr>
-<tr><td bgcolor="#f1f5f9"><code>anti_slop_checklist</code></td><td bgcolor="#f8fafc">Ship gate: run before finishing any UI work</td></tr>
+<!-- tools:start -->
+<tr><td bgcolor="#f0f9ff"><code>get_preflight_brief</code></td><td bgcolor="#f8fafc">Scope and verification contract (call first)</td></tr>
+<tr><td bgcolor="#ecfdf5"><code>load_project_context</code></td><td bgcolor="#f8fafc">Read PRODUCT.md / DESIGN.md from the project (absolute <code>cwd</code>)</td></tr>
+<tr><td bgcolor="#faf5ff"><code>get_design_system</code></td><td bgcolor="#f8fafc">SKILL.md router and reference map</td></tr>
+<tr><td bgcolor="#f1f5f9"><code>get_reference</code></td><td bgcolor="#f8fafc">One of 41 references by name (designer or <code>ux/*</code>)</td></tr>
+<tr><td bgcolor="#fff7ed"><code>anti_slop_checklist</code></td><td bgcolor="#f8fafc">Advisory style and truthful-content review guidance</td></tr>
+<tr><td bgcolor="#eff6ff"><code>list_commands</code></td><td bgcolor="#f8fafc">All design verbs with descriptions</td></tr>
+<tr><td bgcolor="#fdf4ff"><code>get_command</code></td><td bgcolor="#f8fafc">Help and reference names for one verb</td></tr>
+<tr><td bgcolor="#f0fdf4"><code>dispatch_intent</code></td><td bgcolor="#f8fafc">Map a request → verb(s) + at most four references to read</td></tr>
+<tr><td bgcolor="#fffbeb"><code>commit_design_direction</code></td><td bgcolor="#f8fafc">Validate a context-grounded direction record</td></tr>
+<tr><td bgcolor="#fff1f2"><code>get_palette_seed</code></td><td bgcolor="#f8fafc">OKLCH brand seed for authorized new palette work</td></tr>
+<tr><td bgcolor="#fef2f2"><code>detect_antipatterns</code></td><td bgcolor="#f8fafc">Deterministic static scan (44 rules): coverage, file hashes, gaps</td></tr>
+<tr><td bgcolor="#ecfeff"><code>review_and_gate</code></td><td bgcolor="#f8fafc">Static gate per required rule; never claims rendered readiness</td></tr>
+<tr><td bgcolor="#f5f3ff"><code>find_ui_references</code></td><td bgcolor="#f8fafc">Optional niblet real-screen search (<code>NIBLET_TOKEN</code>)</td></tr>
+<tr><td bgcolor="#fefce8"><code>get_design_reference</code></td><td bgcolor="#f8fafc">Optional niblet structured reference (<code>NIBLET_TOKEN</code>)</td></tr>
+<!-- tools:end -->
 </tbody>
 </table>
 
@@ -467,7 +474,7 @@ Use designer-skill to redesign this pricing page without breaking functionality.
 
 </div>
 
-**Resources:** `designer://skill` · `designer://reference/{name}`
+**Resources:** `designer://skill` · `designer://reference/{+name}`
 
 **Prompt:** `design` (args: `task` required, `aesthetic` optional)
 

@@ -32,21 +32,36 @@ jobs:
           cache-dependency-path: designer-skill-mcp/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Committed generated assets match the canonical skill source
+        run: git diff --exit-code -- assets/
       - run: node --test checks/core.mjs
       - run: npm test
-      - run: node scripts/verify-package.mjs
+      - name: Clean-install smoke test of the packed tarball
+        run: node scripts/smoke-tarball.mjs
+
+  versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: node scripts/versions.mjs check
 
   # Preserve the existing required branch-protection check name.
   test:
-    needs: runtime
+    needs: [runtime, versions, validate-plugin]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Require every runtime job to succeed
+      - name: Require every job to succeed
         env:
-          RUNTIME_RESULT: ${{ needs.runtime.result }}
-        run: test "$RUNTIME_RESULT" = success
+          RESULTS: ${{ needs.runtime.result }} ${{ needs.versions.result }} ${{ needs.validate-plugin.result }}
+        run: test "$RESULTS" = "success success success"
 
   validate-plugin:
     runs-on: ubuntu-latest

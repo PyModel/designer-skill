@@ -1,12 +1,24 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 import { finding } from './findings.mjs';
 import { GENERIC_FONTS } from './shared/constants.mjs';
-import { parseAnyColor, resolveLengthPx } from './rules/checks.mjs';
+import { resolveLengthPx } from './rules/checks.mjs';
+import { parseCssColor } from './shared/color.mjs';
+import { blankBlockComments } from './shared/text.mjs';
 
-const DESIGN_NAMES = ['DESIGN.md', 'Design.md', 'design.md'];
-const FALLBACK_DIRS = ['.agents/context', 'docs'];
+// Blank <!-- … --> comments, preserving newlines so line numbers stay valid.
+function stripHtmlCommentsKeepLines(text) {
+  let out = '';
+  let index = 0;
+  for (;;) {
+    const start = text.indexOf('<!--', index);
+    if (start === -1) return out + text.slice(index);
+    const end = text.indexOf('-->', start + 4);
+    const stop = end === -1 ? text.length : end + 3;
+    out += text.slice(index, start) + text.slice(start, stop).replace(/[^\n]/g, ' ');
+    if (end === -1) return out;
+    index = stop;
+  }
+}
+
 const COLOR_CHANNEL_TOLERANCE = 6;
 const RADIUS_TOLERANCE_PX = 0.5;
 
@@ -18,51 +30,20 @@ const BORDER_RADIUS_RE = /border-radius\s*:\s*([^;}\n]+)/gi;
 const BORDER_RADIUS_JS_RE = /borderRadius\s*[:=]\s*["'`]([^"'`]+)["'`]/g;
 const STATIC_DESIGN_SKIP_TAGS = new Set(['head', 'title', 'meta', 'link', 'style', 'script', 'noscript', 'template', 'source']);
 
-function firstExisting(dir, names) {
-  for (const name of names) {
-    const abs = path.join(dir, name);
-    if (fs.existsSync(abs)) return abs;
+// { status: 'absent' } when there is no frontmatter block, { status: 'invalid' }
+// when a block is opened but never closed, else { status: 'ok', data }.
+function readFrontmatter(md) {
+  const lines = String(md || '').replace(/^\uFEFF/, '').split(/\r?\n/);
+  if (lines[0]?.trim() !== '---') return { status: 'absent' };
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === '---') return { status: 'ok', data: parseYamlSubset(lines.slice(1, i).join('\n')) };
   }
-  return null;
-}
-
-function resolveDesignMdPath(cwd = process.cwd()) {
-  const root = firstExisting(cwd, DESIGN_NAMES);
-  if (root) return { path: root, contextDir: cwd };
-
-  for (const rel of FALLBACK_DIRS) {
-    const dir = path.resolve(cwd, rel);
-    const found = firstExisting(dir, DESIGN_NAMES);
-    if (found) return { path: found, contextDir: dir };
-  }
-
-  return null;
-}
-
-function resolveDesignSidecarPath(cwd = process.cwd(), contextDir = cwd) {
-  const candidates = [
-    path.join(cwd, '.designer-skill', 'design.json'),
-    path.join(cwd, 'DESIGN.json'),
-    path.join(contextDir, 'DESIGN.json'),
-  ];
-  return candidates.find((candidate, index) =>
-    candidates.indexOf(candidate) === index && fs.existsSync(candidate)
-  ) || null;
+  return { status: 'invalid', reason: 'frontmatter block is not closed with ---' };
 }
 
 function parseFrontmatter(md) {
-  const lines = String(md || '').split(/\r?\n/);
-  if (lines[0]?.trim() !== '---') return null;
-  let end = -1;
-  for (let i = 1; i < lines.length; i++) {
-    if (lines[i].trim() === '---') { end = i; break; }
-  }
-  if (end === -1) return null;
-  try {
-    return parseYamlSubset(lines.slice(1, end).join('\n'));
-  } catch {
-    return null;
-  }
+  const result = readFrontmatter(md);
+  return result.status === 'ok' ? result.data : null;
 }
 
 function parseYamlSubset(yaml) {
@@ -144,15 +125,6 @@ function parseScalar(raw) {
   return s;
 }
 
-function safeReadJson(filePath) {
-  if (!filePath) return null;
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch {
-    return null;
-  }
-}
-
 function normalizeFontName(value) {
   return String(value || '')
     .trim()
@@ -200,42 +172,8 @@ function colorsClose(a, b) {
   ) <= COLOR_CHANNEL_TOLERANCE;
 }
 
-function hslToRgb(H, S, L, alpha = 1) {
-  const h = (((H % 360) + 360) % 360) / 360;
-  const s = Math.max(0, Math.min(1, S));
-  const l = Math.max(0, Math.min(1, L));
-  const hue2rgb = (p, q, t) => {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  return {
-    r: Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
-    g: Math.round(hue2rgb(p, q, h) * 255),
-    b: Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
-    a: alpha,
-  };
-}
-
 function parseDesignColor(value) {
-  const text = String(value || '').trim();
-  const parsed = parseAnyColor(text);
-  if (parsed) return parsed;
-  const hsl = text.match(/hsla?\(\s*([-\d.]+)(?:deg)?\s*,?\s*([\d.]+)%\s*,?\s*([\d.]+)%(?:\s*[,/]\s*([\d.]+))?\s*\)/i);
-  if (hsl) {
-    return hslToRgb(
-      parseFloat(hsl[1]),
-      parseFloat(hsl[2]) / 100,
-      parseFloat(hsl[3]) / 100,
-      hsl[4] !== undefined ? parseFloat(hsl[4]) : 1,
-    );
-  }
-  return null;
+  return parseCssColor(String(value || ''));
 }
 
 function addDesignColor(out, value, label) {
@@ -334,9 +272,6 @@ function normalizeDesignSystem(input = {}) {
   const sidecar = input.sidecar || null;
   const out = {
     present: true,
-    sourcePath: input.sourcePath || null,
-    sidecarPath: input.sidecarPath || null,
-    mdNewerThanJson: input.mdNewerThanJson === true,
     allowedFonts: new Set(),
     allowedColorKeys: new Map(),
     allowedRadii: [],
@@ -355,36 +290,28 @@ function normalizeDesignSystem(input = {}) {
   return out;
 }
 
-function loadDesignSystemForCwd(cwd = process.cwd()) {
-  const md = resolveDesignMdPath(cwd);
-  if (!md) return null;
-
-  let frontmatter = null;
-  let mdStat = null;
-  try {
-    mdStat = fs.statSync(md.path);
-    frontmatter = parseFrontmatter(fs.readFileSync(md.path, 'utf-8'));
-  } catch {
-    return null;
+// Pure: the caller (the scan's confined reader) supplies DESIGN.md text and an
+// optional sidecar JSON text. Returns
+// { status: 'absent'|'no-tokens'|'loaded'|'invalid', designSystem, reason }.
+function loadDesignSystem({ markdown, sidecarJson } = {}) {
+  if (typeof markdown !== 'string') return { status: 'absent', designSystem: null };
+  const frontmatter = readFrontmatter(markdown);
+  if (frontmatter.status === 'invalid') return { status: 'invalid', designSystem: null, reason: `DESIGN.md ${frontmatter.reason}` };
+  let sidecar = null;
+  if (typeof sidecarJson === 'string') {
+    try {
+      sidecar = JSON.parse(sidecarJson);
+    } catch (error) {
+      return { status: 'invalid', designSystem: null, reason: `design sidecar is not valid JSON (${error.message})` };
+    }
+    if (!sidecar || typeof sidecar !== 'object' || Array.isArray(sidecar)) {
+      return { status: 'invalid', designSystem: null, reason: 'design sidecar must be a JSON object' };
+    }
   }
-  if (!frontmatter || typeof frontmatter !== 'object') return null;
-
-  const sidecarPath = resolveDesignSidecarPath(cwd, md.contextDir);
-  const sidecar = safeReadJson(sidecarPath);
-  let sidecarStat = null;
-  try {
-    if (sidecarPath) sidecarStat = fs.statSync(sidecarPath);
-  } catch {
-    sidecarStat = null;
-  }
-
-  return normalizeDesignSystem({
-    frontmatter,
-    sidecar,
-    sourcePath: md.path,
-    sidecarPath,
-    mdNewerThanJson: !!(mdStat && sidecarStat && mdStat.mtimeMs > sidecarStat.mtimeMs + 1000),
-  });
+  if (frontmatter.status === 'absent' && !sidecar) return { status: 'no-tokens', designSystem: null };
+  const designSystem = normalizeDesignSystem({ frontmatter: frontmatter.data || {}, sidecar });
+  const hasTokens = designSystem.hasFonts || designSystem.hasColors || designSystem.hasRadii;
+  return { status: hasTokens ? 'loaded' : 'no-tokens', designSystem: hasTokens ? designSystem : null };
 }
 
 function isAllowedFont(font, designSystem) {
@@ -418,49 +345,50 @@ function isAllowedRadiusRaw(raw, designSystem) {
   return designSystem.allowedRadii.some(entry => Math.abs(entry.px - px) <= RADIUS_TOLERANCE_PX);
 }
 
+// Block comments are blanked before scanning (see checkSourceDesignSystem);
+// a line comment is recognized by its leading `//`.
 function lineLooksCommented(line) {
-  const trimmed = String(line || '').trim();
-  return trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('<!--');
+  return String(line || '').trimStart().startsWith('//');
 }
+
+// Context checks look only at a bounded window around the match: the
+// declaration a color literal belongs to is local, and scanning the whole
+// line prefix per match is quadratic on minified CSS.
+const COLOR_CONTEXT_WINDOW = 256;
 
 function isProbablyColorLiteral(line, match) {
   const raw = match?.[0] || '';
   const index = match.index ?? -1;
   if (index < 0) return false;
-  if (isInsideCssAttributeSelector(line, index)) return false;
-
-  const before = line.slice(0, index);
-  const after = line.slice(index + raw.length);
+  const before = line.slice(Math.max(0, index - COLOR_CONTEXT_WINDOW), index);
+  const after = line.slice(index + raw.length, index + raw.length + COLOR_CONTEXT_WINDOW);
+  if (isInsideCssAttributeSelector(before, after)) return false;
 
   if (raw.startsWith('#')) {
     if (before.endsWith('&')) return false; // HTML numeric entity, e.g. &#8596;
-
-    const prevNonSpace = before.match(/\S(?=\s*$)/)?.[0] || '';
+    let p = before.length - 1;
+    while (p >= 0 && /\s/.test(before[p])) p--;
+    const prevNonSpace = p >= 0 ? before[p] : '';
     const nextNonSpace = after.match(/^\s*(\S)/)?.[1] || '';
     if (prevNonSpace === '>' && nextNonSpace === '<') return false; // plain text, e.g. PR #155
   }
 
-  const styleContext = /(?:^|[{\s;"'`(,])(?:color|background(?:-color|-image)?|border(?:-(?:top|right|bottom|left))?(?:-color)?|outline(?:-color)?|box-shadow|text-shadow|fill|stroke)\s*:\s*[^;{}"'`]*/i.test(before);
+  const styleContext = /(?:^|[{\s;"'`(,])(?:color|background(?:-color|-image)?|border(?:-(?:top|right|bottom|left))?(?:-color)?|outline(?:-color)?|box-shadow|text-shadow|fill|stroke)\s*:\s*[^;{}"'`]*$/i.test(before);
   const cssFunctionContext = /(?:linear-gradient|radial-gradient|conic-gradient|color-mix)\([^)]*$/i.test(before);
-  const jsColorKeyContext = /(?:^|[,{]\s*)(?:color|background|backgroundColor|borderColor|outlineColor|fill|stroke|boxShadow|textShadow)\s*[:=]\s*["'`]?[^"'`,}]*/i.test(before);
+  const jsColorKeyContext = /(?:^|[,{]\s*)(?:color|background|backgroundColor|borderColor|outlineColor|fill|stroke|boxShadow|textShadow)\s*[:=]\s*["'`]?[^"'`,}]*$/i.test(before);
 
   return styleContext || cssFunctionContext || jsColorKeyContext;
 }
 
-function isInsideCssAttributeSelector(line, index) {
-  if (index < 0) return false;
-  const before = line.slice(0, index);
+function isInsideCssAttributeSelector(before, after) {
   const lastOpen = before.lastIndexOf('[');
-  if (lastOpen === -1) return false;
-  const lastClose = before.lastIndexOf(']');
-  if (lastClose > lastOpen) return false;
-  const after = line.slice(index);
+  if (lastOpen === -1 || before.lastIndexOf(']') > lastOpen) return false;
   const close = after.indexOf(']');
   const block = after.indexOf('{');
   return close !== -1 && (block === -1 || close < block);
 }
 
-function makeDesignFinding(id, filePath, snippet, line = 0, extras = {}) {
+function makeDesignFinding(id, filePath, snippet, line, extras = {}) {
   return { ...finding(id, filePath, snippet, line), ...extras };
 }
 
@@ -514,7 +442,7 @@ function checkSourceDesignSystem(content, filePath, options = {}) {
   if (!designSystem?.present) return [];
 
   const findings = [];
-  const lines = String(content || '').split('\n');
+  const lines = blankBlockComments(stripHtmlCommentsKeepLines(String(content || ''))).split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const lineNum = i + 1;
@@ -740,7 +668,7 @@ function dedupeDesignFindings(findings) {
 export {
   parseFrontmatter,
   normalizeDesignSystem,
-  loadDesignSystemForCwd,
+  loadDesignSystem,
   isAllowedFont,
   isAllowedColorRaw,
   isAllowedRadiusRaw,

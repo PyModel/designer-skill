@@ -1,46 +1,47 @@
-import updateNotifier, { type UpdateInfo } from "update-notifier";
+// Update checks query the npm registry directly: no background process, no
+// config store in $HOME, and nothing written to stdout (the stdio protocol channel).
 import { pkg } from "./pkg.js";
 
-const WEEK_MS = 1000 * 60 * 60 * 24 * 7;
-
 const UPGRADE_COMMAND = "npx -y @pymodel/designer-skill-mcp@latest";
+const REGISTRY_URL = `https://registry.npmjs.org/${pkg.name.replace("/", "%2f")}/latest`;
+const TIMEOUT_MS = 3_000;
 
-function createNotifier() {
-  return updateNotifier({
-    pkg,
-    updateCheckInterval: WEEK_MS,
-    shouldNotifyInNpmScript: false,
-  });
+export interface UpdateInfo { current: string; latest: string }
+
+function parseVersion(version: string): number[] | null {
+  const m = version.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
 }
 
-export function formatUpdateStatus(update: UpdateInfo | undefined): string {
-  if (!update || update.latest === update.current) {
-    const current = update?.current ?? pkg.version;
-    return `${current} (latest)`;
-  }
-  return `${update.current} → ${update.latest} available (${update.type})\nRun: ${UPGRADE_COMMAND}`;
+export function isNewer(latest: string, current: string): boolean {
+  const a = parseVersion(latest);
+  const b = parseVersion(current);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
+}
+
+export function formatUpdateStatus(info: UpdateInfo): string {
+  if (!isNewer(info.latest, info.current)) return `${info.current} (latest)`;
+  return `${info.current} → ${info.latest} available\nRun: ${UPGRADE_COMMAND}`;
 }
 
 export async function fetchUpdateInfo(): Promise<UpdateInfo> {
-  const notifier = createNotifier();
-  return notifier.fetchInfo();
+  const response = await fetch(REGISTRY_URL, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept: "application/json" } });
+  if (!response.ok) throw new Error(`npm registry returned HTTP ${response.status}`);
+  const body = await response.json() as { version?: unknown };
+  if (typeof body.version !== "string") throw new Error("npm registry response has no version");
+  return { current: pkg.version, latest: body.version };
 }
 
 export async function printCheckUpdate(): Promise<void> {
-  const info = await fetchUpdateInfo();
-  console.log(formatUpdateStatus(info));
+  console.log(formatUpdateStatus(await fetchUpdateInfo()));
 }
 
-/** Non-blocking stderr notice; respects NO_UPDATE_NOTIFIER and CI. */
+/** One stderr notice for interactive (terminal) HTTP runs; silent on any failure. */
 export function notifyAvailableUpdate(): void {
-  const notifier = createNotifier();
-  if (!notifier.update) return;
-
-  notifier.notify({
-    defer: false,
-    isGlobal: false,
-    message:
-      "designer-skill-mcp {currentVersion} → {latestVersion} available.\n" +
-      `Run: ${UPGRADE_COMMAND}`,
-  });
+  if (!process.stderr.isTTY || "NO_UPDATE_NOTIFIER" in process.env || process.env.CI) return;
+  fetchUpdateInfo().then((info) => {
+    if (isNewer(info.latest, info.current)) console.error(`designer-skill-mcp ${info.current} → ${info.latest} available. Run: ${UPGRADE_COMMAND}`);
+  }, () => undefined);
 }

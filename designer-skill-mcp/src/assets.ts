@@ -31,7 +31,7 @@ const LOCATIONS: Record<BundledKind, BundledLocation> = {
   engine: {
     bundled: join("assets", "engine"),
     dev: null, // the engine is vendored, not synced from skills/
-    probe: "detect-antipatterns.mjs",
+    probe: "registry/antipatterns.mjs",
     label: "detector engine",
   },
 };

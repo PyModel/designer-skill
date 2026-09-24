@@ -18,14 +18,24 @@ async function main(): Promise<void> {
     case "check-update":
       await printCheckUpdate();
       return;
+    case "error":
+      console.error(`designer-skill-mcp: ${command.message}\n\n${HELP_TEXT.trimEnd()}`);
+      process.exitCode = 2;
+      return;
     case "run":
-      if (command.notifyUpdates) notifyAvailableUpdate();
-      if (command.http) await runHttp({ port: command.port, host: command.host });
-      else await runStdio();
+      if (command.http) {
+        await runHttp({
+          port: command.port, host: command.host, roots: command.roots, allowedHosts: command.allowedHosts,
+          token: process.env.DESIGNER_SKILL_HTTP_TOKEN || undefined,
+        });
+        if (command.notifyUpdates) notifyAvailableUpdate();
+      } else {
+        await runStdio({ roots: command.roots });
+      }
   }
 }
 
 main().catch((err) => {
-  console.error("designer-skill-mcp fatal:", err);
+  console.error("designer-skill-mcp fatal:", err instanceof Error ? err.message : err);
   process.exit(1);
 });
