@@ -59,3 +59,12 @@ describe("documentation matches the server", () => {
     for (const field of direction.inputSchema.required ?? []) expect(rule, `required field ${field}`).toContain(`\`${field}\``);
   });
 });
+
+describe("publish workflow", () => {
+  it("passes npm publish a local tarball path, not an owner/repo shorthand", () => {
+    // `npm publish pkg/x.tgz` resolves to github.com/pkg/x.tgz; only ./ or / marks a file.
+    const args = [...read(".github/workflows/publish.yml").matchAll(/npm publish (\S+)/g)].map((m) => m[1]);
+    expect(args.length).toBeGreaterThan(0);
+    for (const arg of args) expect(arg).toMatch(/^(\.{1,2}\/|\/|\$)/);
+  });
+});
