@@ -102,8 +102,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # UNVERIFIED: installer URL and `login github-oidc` follow the MCP registry
-      # publishing guide; confirm against the registry docs before the first run.
+      # The registry grants this repo's OIDC identity io.github.PyModel/* (case-sensitive);
+      # scripts/versions.mjs keeps server.json name and package.json mcpName on it.
       - name: Publish to the MCP registry
         working-directory: designer-skill-mcp
         run: |

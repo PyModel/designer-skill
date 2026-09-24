@@ -14,6 +14,8 @@ const PKG_NAME = '@pymodel/designer-skill-mcp';
 const SEMVER = /^\d+\.\d+\.\d+$/;
 const PIN_RE = /@pymodel\/designer-skill-mcp@(\d+\.\d+\.\d+)/g;
 const REGISTRY_DESCRIPTION_MAX = 100;
+// The MCP registry grants GitHub-OIDC publishers io.github.<Owner>/* with the owner's exact case.
+const REGISTRY_NAME = 'io.github.PyModel/designer-skill-mcp';
 
 const readJson = (rel) => JSON.parse(readFileSync(join(ROOT, rel), 'utf8'));
 const writeJson = (rel, value) => writeFileSync(join(ROOT, rel), `${JSON.stringify(value, null, 2)}\n`);
@@ -49,6 +51,8 @@ function check() {
   if (server.description.length > REGISTRY_DESCRIPTION_MAX) {
     problems.push(`designer-skill-mcp/server.json: description is ${server.description.length} chars (registry max ${REGISTRY_DESCRIPTION_MAX})`);
   }
+  if (server.name !== REGISTRY_NAME) problems.push(`designer-skill-mcp/server.json: name ${server.name} ≠ ${REGISTRY_NAME}`);
+  if (readJson(PKG).mcpName !== server.name) problems.push(`${PKG}: mcpName ≠ server.json name (registry rejects the npm package)`);
   if (server.packages.some((p) => p.identifier !== PKG_NAME)) problems.push(`designer-skill-mcp/server.json: package identifier ≠ ${PKG_NAME}`);
   return { expected, problems };
 }

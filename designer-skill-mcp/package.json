@@ -1,7 +1,7 @@
 {
   "name": "@pymodel/designer-skill-mcp",
   "version": "0.18.0",
-  "mcpName": "io.github.pymodel/designer-skill-mcp",
+  "mcpName": "io.github.PyModel/designer-skill-mcp",
   "description": "Plug-and-play MCP that gives your coding agent UI superpowers: design tools, reference docs, and anti-slop checks.",
   "type": "module",
   "bin": {
