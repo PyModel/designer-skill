@@ -4,6 +4,9 @@
 > **Read time:** ~20 minutes. **Build time:** ~10 minutes.
 > **What you'll have at the end:** A MCP server that hands Pythinker a production-grade design vocabulary, ready to invoke from a chat.
 
+
+> **Update (v0.18):** this guide was written for the original four-tool server. The server now exposes 14 tools, and the ship gate is `review_and_gate` (a static per-rule gate); `anti_slop_checklist` is advisory guidance. See the [README](../../README.md#tools) for the current tool list.
+
 ---
 
 ## Table of contents

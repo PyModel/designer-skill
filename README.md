@@ -2,40 +2,29 @@
 
 <img src="docs/designer-skill-mcp-logo.webp" alt="designer-skill-mcp" width="580" />
 
-<br />
-
 **Plug-and-play MCP. UI superpowers for your agent.**
-
-<br />
 
 [![release](https://img.shields.io/npm/v/@pymodel/designer-skill-mcp?style=flat-square&label=release&color=4f46e5)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
 [![downloads](https://img.shields.io/npm/dt/@pymodel/designer-skill-mcp?style=flat-square&label=downloads&labelColor=000000&color=dfb317)](https://www.npmjs.com/package/@pymodel/designer-skill-mcp)
+[![tests](https://img.shields.io/github/actions/workflow/status/PyModel/designer-skill/test.yml?branch=main&style=flat-square&label=tests)](https://github.com/PyModel/designer-skill/actions/workflows/test.yml)
 [![license](https://img.shields.io/badge/license-MIT-16a34a?style=flat-square)](LICENSE)
 [![skills.sh](https://skills.sh/b/pymodel/designer-skill)](https://skills.sh/pymodel/designer-skill)
-[![visitors](https://komarev.com/ghpvc/?username=PyModel-designer-skill&label=visitors&color=4f46e5&style=flat-square)](https://github.com/PyModel/designer-skill)
-
 <br />
-
-[![agents](https://img.shields.io/badge/agents-8-7c3aed?style=flat-square)](#setup)
-[![references](https://img.shields.io/badge/references-41-e11d48?style=flat-square)](#reference)
 [![tools](https://img.shields.io/badge/MCP_tools-14-0ea5e9?style=flat-square)](#tools)
+[![references](https://img.shields.io/badge/references-41-e11d48?style=flat-square)](#references)
 [![detector](https://img.shields.io/badge/detector-44_rules-f59e0b?style=flat-square)](#tools)
+[![node](https://img.shields.io/badge/node-%E2%89%A522-10b981?style=flat-square)](designer-skill-mcp/package.json)
+[![api key](https://img.shields.io/badge/API_key-none-7c3aed?style=flat-square)](#setup)
 
-<br />
-
-[Overview](#overview) · [Setup](#setup) · [Reference](#reference) · [Tools](#tools) · [Development](#development)
-
-```bash
-npm i @pymodel/designer-skill-mcp
-```
+[Setup](#setup) · [How it works](#how-it-works) · [References](#references) · [Tools](#tools) · [Development](#development)
 
 </div>
 
-<br />
+## Setup
 
-### Paste into your agent
+[![setup](https://img.shields.io/badge/1_·_Setup-0ea5e9?style=for-the-badge)](#setup)
 
-Fastest path: copy this into Claude Code, Codex, Cursor, or any MCP client's chat. The agent installs the skill, wires the MCP, and verifies the tools. No API key.
+**Paste into your agent** (Claude Code, Codex, Cursor, any MCP client). It installs the skill, wires the MCP and verifies the tools:
 
 ```text
 Add designer-skill alongside Niblet Designer UI. It is optional and keyless: it routes a design request, loads the right reference, and gates the ship. Niblet supplies the real screens and materials.
@@ -56,177 +45,36 @@ No API key is needed. Do not add one.
 When setup is complete, confirm that the designer-skill skill is installed and that the three tools are exposed. On UI work from now on: call get_preflight_brief first, use dispatch_intent to load only the references it recommends, pull screen references and materials from the niblet server, then call review_and_gate on the changed files before saying the work is done. If there is an active UI task, continue it. Otherwise say: "designer-skill is ready and paired with Niblet."
 ```
 
-Using it without Niblet? Drop the "pull screen references and materials from the niblet server" clause; everything else stands.
+No Niblet? Drop the "pull screen references and materials from the niblet server" clause.
 
-<br />
+**Or pick one:**
 
-<table width="100%">
-<tr>
-<td width="33%" valign="top" bgcolor="#ecfdf5">
+| | Install |
+|---|---|
+| 🟣 **Claude Code plugin** (skill + MCP) | `/plugin marketplace add PyModel/designer-skill` then `/plugin install designer-skill@pymodel` |
+| 🟢 **Codex plugin** | `codex plugin marketplace add PyModel/designer-skill`, then install **designer-skill** from **pymodel** in `/plugins` |
+| ⚫ **Cursor plugin** | Install from the marketplace; ships `mcp.json`, skills, `/designer-setup` · `/designer-status` |
+| 🔵 **MCP only, any client** | `claude mcp add designer-skill -- npx -y @pymodel/designer-skill-mcp` (same args for `codex mcp add`, `pythinker mcp add --transport stdio`) |
+| 🟠 **Skill only** | `npx skills add PyModel/designer-skill --skill designer-skill` or copy `skills/designer-skill/` into `~/.claude/skills/` / `~/.codex/skills/` |
 
-### Route
-
-`dispatch_intent` maps vague requests like "make it pop" or "it feels off" to the right design verb and reference files.
-
-</td>
-<td width="34%" valign="top" bgcolor="#eff6ff">
-
-### Know
-
-15 reference files cover type, color, motion, a11y, anti-slop, and redesign loops — plus the 26-file `ux-designer` module for a11y, forms, collaboration, canvas, AI, i18n, and more. Your agent reads the right file before writing UI code.
-
-</td>
-<td width="33%" valign="top" bgcolor="#faf5ff">
-
-### Check
-
-A 44-rule deterministic detector backs `review_and_gate`, which reports each required rule as ran, unsupported, unresolved or waived before shipping. Generic UI gets caught before it lands.
-
-</td>
-</tr>
-</table>
-
-<br />
-
-<div align="center">
-
-[![overview](https://img.shields.io/badge/Overview-18181b?style=for-the-badge)](#overview)
-
-</div>
-
-**designer-skill-mcp** is a small [MCP](https://modelcontextprotocol.io) server you add in one line. Your agent gets design tools, reference docs, and a static verification gate so UI work stops looking generic.
-
-```mermaid
-flowchart LR
-  A[Your prompt] --> B[dispatch_intent]
-  B --> C[get_reference]
-  C --> D[Build / polish UI]
-  D --> E[anti_slop_checklist]
-  E --> F[Ship]
-  style A fill:#f8fafc,stroke:#94a3b8,color:#18181b
-  style B fill:#eff6ff,stroke:#3b82f6,color:#1e3a8a
-  style C fill:#faf5ff,stroke:#7c3aed,color:#4c1d95
-  style D fill:#fff7ed,stroke:#e87a3d,color:#7c2d12
-  style E fill:#ecfdf5,stroke:#10b981,color:#065f46
-  style F fill:#f1f5f9,stroke:#64748b,color:#0f172a
-```
-
-Add the server. Ask in plain language. The agent handles the rest.
-
-<div align="center">
-
-[![skill](https://img.shields.io/badge/design_skill-15_refs-7c3aed?style=flat-square)](skills/designer-skill/)
-[![skill](https://img.shields.io/badge/ux_designer-26_refs-7c3aed?style=flat-square)](skills/ux-designer/)
-[![mcp](https://img.shields.io/badge/MCP-14_tools-0ea5e9?style=flat-square)](designer-skill-mcp/)
-
-**Built with it:** [pythinker.com](https://pythinker.com) — a live production site designed end-to-end with this skill.
-
-<a href="https://pythinker.com"><img src="docs/showcase/pythinker-designer-skill-mcp.webp" alt="pythinker.com — built with designer-skill" width="760" /></a>
-
-</div>
-
-<br />
-
-<div align="center">
-
-[![setup](https://img.shields.io/badge/Setup-0ea5e9?style=for-the-badge)](#setup)
-
-</div>
-
-### Skills CLI
-
-```bash
-npx skills add PyModel/designer-skill --skill designer-skill
-```
-
-### Plugin (recommended)
-
-<div align="center">
-
-[![claude](https://img.shields.io/badge/Claude_Code-plugin-7c3aed?style=flat-square)](#setup)
-[![codex](https://img.shields.io/badge/Codex-plugin-10b981?style=flat-square)](#setup)
-[![cursor](https://img.shields.io/badge/Cursor-plugin-18181b?style=flat-square)](#setup)
-
-</div>
-
-One install gets both the skill and the MCP server:
-
-```
-/plugin marketplace add PyModel/designer-skill
-/plugin install designer-skill@pymodel
-```
-
-Codex CLI:
-
-```bash
-codex plugin marketplace add PyModel/designer-skill
-```
-
-Then install **designer-skill** from the **pymodel** marketplace in `/plugins`. The skill appears as `designer-skill:designer-skill`.
-
-**Cursor:** install from the marketplace (or open this repo). Plugin ships `mcp.json`, skills, and `/designer-setup` · `/designer-status` commands.
-
-### Plug in (any client)
-
-Same one-liner everywhere. No API key. Repo-root `mcp.json` is the canonical MCP config (plugins reference it too):
-
-```json
-{
-  "mcpServers": {
-    "designer-skill": {
-      "command": "npx",
-      "args": ["-y", "@pymodel/designer-skill-mcp@latest"]
-    }
-  }
-}
-```
-
-**Updates:** `@latest` for newest npm; pin `@pymodel/designer-skill-mcp@0.18.0` for teams. Plugin skill content updates separately (`/plugin update …`). Registry: `io.github.pymodel/designer-skill-mcp` (publish via `mcp-publisher` after npm release).
-
-<div align="center">
-
-[![pythinker](https://img.shields.io/badge/Pythinker-0ea5e9?style=flat-square)](docs/blog/integrating-designer-skill-with-pythinker.md)
-[![codex](https://img.shields.io/badge/Codex_CLI-10b981?style=flat-square)](https://github.com/openai/codex)
-[![claude](https://img.shields.io/badge/Claude_Code-c15a3c?style=flat-square)](https://claude.ai/code)
-[![cursor](https://img.shields.io/badge/Cursor-18181b?style=flat-square)](https://cursor.com)
-[![vscode](https://img.shields.io/badge/VS_Code-007ACC?style=flat-square&logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com)
-[![kilo](https://img.shields.io/badge/Kilo_Code-7c3aed?style=flat-square)](https://kilocode.ai)
-[![opencode](https://img.shields.io/badge/Open_Code-e11d48?style=flat-square)](https://opencode.ai)
-[![pi](https://img.shields.io/badge/Pi-f59e0b?style=flat-square)](https://github.com/earendil-works/pi-coding-agent)
-
-</div>
-
-<table>
-<thead>
-<tr>
-<th align="left" bgcolor="#0ea5e9"><font color="#ffffff">Client</font></th>
-<th align="left" bgcolor="#0ea5e9"><font color="#ffffff">Quick install</font></th>
-</tr>
-</thead>
-<tbody>
-<tr><td bgcolor="#f0f9ff"><b>Pythinker</b></td><td bgcolor="#f8fafc"><code>pythinker mcp add --transport stdio designer-skill -- npx -y @pymodel/designer-skill-mcp</code> · <a href="docs/blog/integrating-designer-skill-with-pythinker.md">guide</a></td></tr>
-<tr><td bgcolor="#ecfdf5"><b>Codex CLI</b></td><td bgcolor="#f8fafc"><code>codex mcp add designer-skill -- npx -y @pymodel/designer-skill-mcp</code></td></tr>
-<tr><td bgcolor="#faf5ff"><b>Claude Code</b></td><td bgcolor="#f8fafc"><code>claude mcp add designer-skill -- npx -y @pymodel/designer-skill-mcp</code></td></tr>
-<tr><td bgcolor="#f1f5f9"><b>Cursor</b></td><td bgcolor="#f8fafc">Cursor plugin or copy <code>mcp.json</code> → <code>.cursor/mcp.json</code></td></tr>
-<tr><td bgcolor="#eff6ff"><b>VS Code</b></td><td bgcolor="#f8fafc"><code>.vscode/mcp.json</code> (<code>"servers"</code> + <code>"type": "stdio"</code>)</td></tr>
-<tr><td bgcolor="#fdf4ff"><b>Kilo Code</b></td><td bgcolor="#f8fafc">MCP Settings → <code>mcp_settings.json</code></td></tr>
-<tr><td bgcolor="#fff1f2"><b>Open Code</b></td><td bgcolor="#f8fafc"><code>opencode.json</code> (key <code>"mcp"</code>)</td></tr>
-<tr><td bgcolor="#fffbeb"><b>Pi</b></td><td bgcolor="#f8fafc">MCP config or native skill path</td></tr>
-</tbody>
-</table>
-
-<details>
-<summary><strong>Per-client config snippets</strong></summary>
-
-**Pythinker** (`~/.pythinker/mcp.json`)
+Canonical MCP config ([`mcp.json`](mcp.json)):
 
 ```json
 { "mcpServers": { "designer-skill": { "command": "npx", "args": ["-y", "@pymodel/designer-skill-mcp@latest"] } } }
 ```
 
-Verify: `pythinker mcp test designer-skill` · TUI: `/mcp` lists the server, `/tools` shows `mcp_designer-skill_*`.
+`@latest` tracks npm; teams pin `@pymodel/designer-skill-mcp@0.18.0`. Plugin skill content updates separately (`/plugin update …`). MCP registry name: `io.github.PyModel/designer-skill-mcp`. Requires Node 22+.
 
-**Codex CLI** (`~/.codex/config.toml`)
+<details>
+<summary><strong>Per-client config</strong> (VS Code, Codex TOML, Kilo, Open Code, Claude Desktop, Pythinker, Pi)</summary>
+
+**VS Code** `.vscode/mcp.json` (1.99+):
+
+```json
+{ "servers": { "designer-skill": { "type": "stdio", "command": "npx", "args": ["-y", "@pymodel/designer-skill-mcp"] } } }
+```
+
+**Codex CLI** `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.designer-skill]
@@ -234,277 +82,142 @@ command = "npx"
 args = ["-y", "@pymodel/designer-skill-mcp"]
 ```
 
-**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`)
+**Open Code** `opencode.json`:
 
 ```json
-{ "mcpServers": { "designer-skill": { "command": "npx", "args": ["-y", "@pymodel/designer-skill-mcp@latest"] } } }
+{ "mcp": { "designer-skill": { "type": "local", "command": ["npx", "-y", "@pymodel/designer-skill-mcp"] } } }
 ```
 
-**Cursor** (`.cursor/mcp.json` — same shape as repo-root `mcp.json`)
+**Claude Desktop, Cursor (`.cursor/mcp.json`), Kilo Code (`mcp_settings.json`), Pythinker (`~/.pythinker/mcp.json`)**: the canonical `mcpServers` JSON above. Pythinker verify: `pythinker mcp test designer-skill` ([guide](docs/blog/integrating-designer-skill-with-pythinker.md)).
 
-**VS Code** (`.vscode/mcp.json`, requires 1.99+ or MCP extension)
+**Pi**: the same JSON, or register the skill natively: `{ "skills": [{ "path": "/path/to/skills/designer-skill/SKILL.md" }] }`
 
-```json
-{
-  "servers": {
-    "designer-skill": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@pymodel/designer-skill-mcp"]
-    }
-  }
-}
-```
-
-**Kilo Code** (MCP Settings → Edit MCP Settings)
-
-```json
-{
-  "mcpServers": {
-    "designer-skill": {
-      "command": "npx",
-      "args": ["-y", "@pymodel/designer-skill-mcp"],
-      "disabled": false,
-      "alwaysAllow": []
-    }
-  }
-}
-```
-
-**Open Code** (`opencode.json` or `~/.config/opencode/config.json`)
-
-```json
-{
-  "mcp": {
-    "designer-skill": {
-      "type": "local",
-      "command": ["npx", "-y", "@pymodel/designer-skill-mcp"]
-    }
-  }
-}
-```
-
-**Pi** (MCP config, same JSON as Pythinker, or register the skill natively):
-
-```json
-{ "skills": [{ "path": "/path/to/skills/designer-skill/SKILL.md" }] }
-```
+**Local checkout**: replace `npx` with `"command": "node", "args": ["/abs/path/to/designer-skill-mcp/dist/index.js"]`.
 
 </details>
 
-### Skill-only
+## How it works
 
-<div align="center">
+[![how](https://img.shields.io/badge/2_·_How_it_works-7c3aed?style=for-the-badge)](#how-it-works)
 
-[![skill_copy](https://img.shields.io/badge/skill--only-no_MCP-71717a?style=flat-square)](#setup)
-
-</div>
-
-```bash
-cp -r skills/designer-skill/ ~/.claude/skills/designer-skill/   # Claude Code
-cp -r skills/designer-skill/ ~/.codex/skills/designer-skill/     # Codex
+```mermaid
+flowchart LR
+  A[Prompt] --> B[get_preflight_brief]
+  B --> C[dispatch_intent]
+  C --> D[get_reference]
+  D --> E[Build / polish UI]
+  E --> F[review_and_gate]
+  F -->|FAIL: fix| E
+  F -->|static checks pass| G[Rendered checks<br/>by the host]
+  classDef start fill:#f8fafc,stroke:#94a3b8,color:#18181b
+  classDef route fill:#eff6ff,stroke:#3b82f6,color:#1e3a8a
+  classDef know fill:#faf5ff,stroke:#7c3aed,color:#4c1d95
+  classDef work fill:#fff7ed,stroke:#e87a3d,color:#7c2d12
+  classDef gate fill:#ecfdf5,stroke:#10b981,color:#065f46
+  classDef host fill:#fff1f2,stroke:#e11d48,color:#881337
+  class A start
+  class B,C route
+  class D know
+  class E work
+  class F gate
+  class G host
 ```
 
-Invoke with the Skill tool or `$designer-skill` on design tasks.
+| 🔵 Route | 🟣 Know | 🟢 Check |
+|---|---|---|
+| `dispatch_intent` maps "make it pop" or "it feels off" to design verbs and at most four references. | 15 designer references (type, color, motion, a11y, anti-slop, redesign) plus 26 `ux/*` references (forms, collaboration, canvas, AI, i18n…). | A 44-rule deterministic detector backs `review_and_gate`, which reports each required rule as ran, unsupported, unresolved or waived. |
 
-### Invoke
+The gate is static only: overall status is `FAIL` or `NOT_VERIFIED`, never a rendered-readiness pass. Rendered, accessibility and performance checks stay `NOT_RUN` until the host supplies evidence.
 
-<div align="center">
-
-<table width="92%">
-<tr>
-<td align="center" bgcolor="#18181b">
-
-<br />
-
-<font color="#f8fafc" size="4">
-
-Use designer-skill to redesign this pricing page without breaking functionality.
-
-</font>
-
-<br /><br />
-
-<font color="#94a3b8">
-
-<code>get_design_system</code> → <code>dispatch_intent</code> → <code>get_reference</code> → work → <code>anti_slop_checklist</code>
-
-</font>
-
-<br /><br />
-
-</td>
-</tr>
-</table>
-
-</div>
-
-<br />
+**Example:** *"Use designer-skill to redesign this pricing page without breaking functionality."* → `get_preflight_brief` → `dispatch_intent` → `get_reference` → edit → `review_and_gate`.
 
 <div align="center">
 
-[![reference](https://img.shields.io/badge/Reference-e11d48?style=for-the-badge)](#reference)
+**Built with it:** [pythinker.com](https://pythinker.com)
+
+<a href="https://pythinker.com"><img src="docs/showcase/pythinker-designer-skill-mcp.webp" alt="pythinker.com — built with designer-skill" width="720" /></a>
 
 </div>
 
-### Files
+## References
 
-<table>
-<thead>
-<tr>
-<th align="left" bgcolor="#e11d48"><font color="#ffffff">File</font></th>
-<th align="left" bgcolor="#e11d48"><font color="#ffffff">Use when</font></th>
-<th align="center" bgcolor="#e11d48"><font color="#ffffff">Tier</font></th>
-</tr>
-</thead>
-<tbody>
-<tr><td bgcolor="#fff1f2"><code>design-principles.md</code></td><td bgcolor="#f8fafc">Typography, spacing, color, layout, hierarchy (neutral baseline)</td><td align="center" bgcolor="#eff6ff"><b>core</b></td></tr>
-<tr><td bgcolor="#fdf4ff"><code>differentiation-playbook.md</code></td><td bgcolor="#f8fafc">How to be distinctive: inverse test, layout menu, one weird thing, named references</td><td align="center" bgcolor="#eff6ff"><b>core</b></td></tr>
-<tr><td bgcolor="#fff7ed"><code>aesthetic-systems.md</code></td><td bgcolor="#f8fafc">Picking a look: 5 systems with palettes, fonts, shadows</td><td align="center" bgcolor="#eff6ff"><b>core</b></td></tr>
-<tr><td bgcolor="#faf5ff"><code>motion-and-interaction.md</code></td><td bgcolor="#f8fafc">Animation timing, springs, scroll, reduced-motion</td><td align="center" bgcolor="#eff6ff"><b>core</b></td></tr>
-<tr><td bgcolor="#ecfdf5"><code>engineering-and-performance.md</code></td><td bgcolor="#f8fafc">Tokens, a11y, responsive, Core Web Vitals, real-data hardening</td><td align="center" bgcolor="#eff6ff"><b>core</b></td></tr>
-<tr><td bgcolor="#f0f9ff"><code>avoid-ai-slop.md</code></td><td bgcolor="#f8fafc">Ban-list, category-reflex checks, output-completeness contract</td><td align="center" bgcolor="#eff6ff"><b>core</b></td></tr>
-<tr><td bgcolor="#fdf4ff"><code>refactor-and-redesign.md</code></td><td bgcolor="#f8fafc">Audit → diagnose → redesign without breaking behavior</td><td align="center" bgcolor="#eff6ff"><b>core</b></td></tr>
-<tr><td bgcolor="#f1f5f9"><code>command-playbook.md</code></td><td bgcolor="#f8fafc">Intent → verb dispatch (build, finish, amplify, ship, …)</td><td align="center" bgcolor="#eff6ff"><b>core</b></td></tr>
-<tr><td bgcolor="#fffbeb"><code>interaction-design.md</code></td><td bgcolor="#f8fafc">Fitts/Hick/Miller, forms, navigation, errors, loading states</td><td align="center" bgcolor="#fdf2f8"><b>extended</b></td></tr>
-<tr><td bgcolor="#fff1f2"><code>visual-critique.md</code></td><td bgcolor="#f8fafc">Seven-dimension critique instrument</td><td align="center" bgcolor="#fdf2f8"><b>extended</b></td></tr>
-<tr><td bgcolor="#eff6ff"><code>design-systems.md</code></td><td bgcolor="#f8fafc">Token architecture, component specs, theming</td><td align="center" bgcolor="#fdf2f8"><b>extended</b></td></tr>
-<tr><td bgcolor="#ecfdf5"><code>project-init.md</code></td><td bgcolor="#f8fafc">Discovery interview, PRODUCT.md, DESIGN.md setup</td><td align="center" bgcolor="#fdf2f8"><b>extended</b></td></tr>
-<tr><td bgcolor="#faf5ff"><code>craft-flow.md</code></td><td bgcolor="#f8fafc">Shape-then-build pipeline with user gates</td><td align="center" bgcolor="#fdf2f8"><b>extended</b></td></tr>
-<tr><td bgcolor="#f0f9ff"><code>live-mode.md</code></td><td bgcolor="#f8fafc">Browser variant mode: element select, HMR, poll/steer/accept</td><td align="center" bgcolor="#fdf2f8"><b>extended</b></td></tr>
-<tr><td bgcolor="#fff7ed"><code>css-techniques.md</code></td><td bgcolor="#f8fafc">Modern CSS cookbook: resets, centering, selectors, logical props, container queries, <code>:has()</code>, <code>clamp()</code></td><td align="center" bgcolor="#fdf2f8"><b>extended</b></td></tr>
-</tbody>
-</table>
+[![refs](https://img.shields.io/badge/3_·_References-e11d48?style=for-the-badge)](#references)
 
-<div align="center">
+| File | Use when | Tier |
+|---|---|---|
+| `design-principles` | Typography, spacing, color, layout, hierarchy | 🔵 core |
+| `differentiation-playbook` | Being distinctive: inverse test, layout menu, named references | 🔵 core |
+| `aesthetic-systems` | Picking a look: 5 systems with palettes, fonts, shadows | 🔵 core |
+| `motion-and-interaction` | Timing, springs, scroll, reduced motion | 🔵 core |
+| `engineering-and-performance` | Tokens, a11y, responsive, Core Web Vitals | 🔵 core |
+| `avoid-ai-slop` | Ban list, category-reflex checks, completeness contract | 🔵 core |
+| `refactor-and-redesign` | Audit → diagnose → redesign without breaking behavior | 🔵 core |
+| `command-playbook` | Intent → verb dispatch | 🔵 core |
+| `interaction-design` | Fitts/Hick/Miller, forms, navigation, errors, loading | 🔴 extended |
+| `visual-critique` | Seven-dimension critique | 🔴 extended |
+| `design-systems` | Token architecture, component specs, theming | 🔴 extended |
+| `project-init` | Discovery interview, PRODUCT.md, DESIGN.md | 🔴 extended |
+| `craft-flow` | Shape-then-build pipeline with user gates | 🔴 extended |
+| `live-mode` | Browser variant mode: select, HMR, steer, accept | 🔴 extended |
+| `css-techniques` | Modern CSS: container queries, `:has()`, `clamp()`, logical props | 🔴 extended |
 
-[![core](https://img.shields.io/badge/core-8-0ea5e9?style=flat-square)](#reference)
-[![extended](https://img.shields.io/badge/extended-7-e11d48?style=flat-square)](#reference)
+Plus 26 `ux/*` references in [`skills/ux-designer/`](skills/ux-designer/).
 
-</div>
+| Phrase | Verbs | Reads |
+|---|---|---|
+| "make it pop" | `amplify` · `color` | `aesthetic-systems`, `design-principles` |
+| "it feels off" | `check` · `layout` | `refactor-and-redesign`, `avoid-ai-slop` |
+| "production-ready" | `ship` · `check` | `engineering-and-performance` |
+| "add some motion" | `motion` | `motion-and-interaction` |
+| "it looks AI-made" | `review` · `brand` | `avoid-ai-slop`, `aesthetic-systems` |
+| "redesign this" | `check` · `refresh` | `refactor-and-redesign`, `command-playbook` |
 
-### Intent → verb
+## Tools
 
-<table>
-<thead>
-<tr>
-<th align="left" bgcolor="#7c3aed"><font color="#ffffff">Phrase</font></th>
-<th align="left" bgcolor="#7c3aed"><font color="#ffffff">Verb(s)</font></th>
-<th align="left" bgcolor="#7c3aed"><font color="#ffffff">Read</font></th>
-</tr>
-</thead>
-<tbody>
-<tr><td bgcolor="#faf5ff">"make it pop"</td><td bgcolor="#f8fafc"><code>amplify</code> · <code>color</code></td><td bgcolor="#f8fafc"><code>aesthetic-systems</code>, <code>design-principles</code></td></tr>
-<tr><td bgcolor="#fdf4ff">"it feels off"</td><td bgcolor="#f8fafc"><code>check</code> · <code>layout</code></td><td bgcolor="#f8fafc"><code>refactor-and-redesign</code>, <code>avoid-ai-slop</code></td></tr>
-<tr><td bgcolor="#ecfdf5">"production-ready"</td><td bgcolor="#f8fafc"><code>ship</code> · <code>check</code></td><td bgcolor="#f8fafc"><code>engineering-and-performance</code></td></tr>
-<tr><td bgcolor="#eff6ff">"add some motion"</td><td bgcolor="#f8fafc"><code>motion</code></td><td bgcolor="#f8fafc"><code>motion-and-interaction</code></td></tr>
-<tr><td bgcolor="#fff7ed">"it looks AI-made"</td><td bgcolor="#f8fafc"><code>review</code> · <code>brand</code></td><td bgcolor="#f8fafc"><code>avoid-ai-slop</code>, <code>aesthetic-systems</code></td></tr>
-<tr><td bgcolor="#fff1f2">"redesign this"</td><td bgcolor="#f8fafc"><code>check</code> · <code>refresh</code></td><td bgcolor="#f8fafc"><code>refactor-and-redesign</code>, <code>command-playbook</code></td></tr>
-</tbody>
-</table>
+[![tools](https://img.shields.io/badge/4_·_Tools-0ea5e9?style=for-the-badge)](#tools)
 
-### Preflight
-
-<table>
-<tr>
-<td width="8%" align="center" bgcolor="#10b981"><font color="#ffffff"><b>1</b></font></td>
-<td bgcolor="#ecfdf5">Scope the surface: <b>brand</b> register (distinctiveness) vs <b>product</b> register (earned familiarity).</td>
-</tr>
-<tr>
-<td align="center" bgcolor="#3b82f6"><font color="#ffffff"><b>2</b></font></td>
-<td bgcolor="#eff6ff">Commit to one aesthetic system; never mix two signatures on one surface.</td>
-</tr>
-<tr>
-<td align="center" bgcolor="#7c3aed"><font color="#ffffff"><b>3</b></font></td>
-<td bgcolor="#faf5ff">Run the category-reflex check in <code>avoid-ai-slop.md</code>.</td>
-</tr>
-<tr>
-<td align="center" bgcolor="#e87a3d"><font color="#ffffff"><b>4</b></font></td>
-<td bgcolor="#fff7ed">Build on <code>design-principles.md</code> + <code>engineering-and-performance.md</code>; add motion last.</td>
-</tr>
-<tr>
-<td align="center" bgcolor="#e11d48"><font color="#ffffff"><b>5</b></font></td>
-<td bgcolor="#fff1f2">For existing UI, audit → diagnose → redesign. Do not rebuild from scratch.</td>
-</tr>
-<tr>
-<td align="center" bgcolor="#f59e0b"><font color="#ffffff"><b>6</b></font></td>
-<td bgcolor="#fffbeb">Run <code>review_and_gate</code> on changed files before declaring done; a static PASS still means rendered checks are NOT_VERIFIED.</td>
-</tr>
-</table>
-
-<br />
-
-<div align="center">
-
-[![tools](https://img.shields.io/badge/MCP_Tools-0ea5e9?style=for-the-badge)](#tools)
-
-</div>
-
-<table>
-<thead>
-<tr>
-<th align="left" bgcolor="#0ea5e9"><font color="#ffffff">Tool</font></th>
-<th align="left" bgcolor="#0ea5e9"><font color="#ffffff">Purpose</font></th>
-</tr>
-</thead>
-<tbody>
 <!-- tools:start -->
-<tr><td bgcolor="#f0f9ff"><code>get_preflight_brief</code></td><td bgcolor="#f8fafc">Scope and verification contract (call first)</td></tr>
-<tr><td bgcolor="#ecfdf5"><code>load_project_context</code></td><td bgcolor="#f8fafc">Read PRODUCT.md / DESIGN.md from the project (absolute <code>cwd</code>)</td></tr>
-<tr><td bgcolor="#faf5ff"><code>get_design_system</code></td><td bgcolor="#f8fafc">SKILL.md router and reference map</td></tr>
-<tr><td bgcolor="#f1f5f9"><code>get_reference</code></td><td bgcolor="#f8fafc">One of 41 references by name (designer or <code>ux/*</code>)</td></tr>
-<tr><td bgcolor="#fff7ed"><code>anti_slop_checklist</code></td><td bgcolor="#f8fafc">Advisory style and truthful-content review guidance</td></tr>
-<tr><td bgcolor="#eff6ff"><code>list_commands</code></td><td bgcolor="#f8fafc">All design verbs with descriptions</td></tr>
-<tr><td bgcolor="#fdf4ff"><code>get_command</code></td><td bgcolor="#f8fafc">Help and reference names for one verb</td></tr>
-<tr><td bgcolor="#f0fdf4"><code>dispatch_intent</code></td><td bgcolor="#f8fafc">Map a request → verb(s) + at most four references to read</td></tr>
-<tr><td bgcolor="#fffbeb"><code>commit_design_direction</code></td><td bgcolor="#f8fafc">Validate a context-grounded direction record</td></tr>
-<tr><td bgcolor="#fff1f2"><code>get_palette_seed</code></td><td bgcolor="#f8fafc">OKLCH brand seed for authorized new palette work</td></tr>
-<tr><td bgcolor="#fef2f2"><code>detect_antipatterns</code></td><td bgcolor="#f8fafc">Deterministic static scan (44 rules): coverage, file hashes, gaps</td></tr>
-<tr><td bgcolor="#ecfeff"><code>review_and_gate</code></td><td bgcolor="#f8fafc">Static gate per required rule; never claims rendered readiness</td></tr>
-<tr><td bgcolor="#f5f3ff"><code>find_ui_references</code></td><td bgcolor="#f8fafc">Optional niblet real-screen search (<code>NIBLET_TOKEN</code>)</td></tr>
-<tr><td bgcolor="#fefce8"><code>get_design_reference</code></td><td bgcolor="#f8fafc">Optional niblet structured reference (<code>NIBLET_TOKEN</code>)</td></tr>
+| Tool | Purpose |
+|---|---|
+| `get_preflight_brief` | Scope and verification contract (call first) |
+| `load_project_context` | Read PRODUCT.md / DESIGN.md from the project (absolute `cwd`) |
+| `get_design_system` | SKILL.md router and reference map |
+| `get_reference` | One of 41 references by name (designer or `ux/*`) |
+| `anti_slop_checklist` | Advisory style and truthful-content review guidance |
+| `list_commands` | All design verbs with descriptions |
+| `get_command` | Help and reference names for one verb |
+| `dispatch_intent` | Map a request → verb(s) + at most four references to read |
+| `commit_design_direction` | Validate a context-grounded direction record |
+| `get_palette_seed` | OKLCH brand seed for authorized new palette work |
+| `detect_antipatterns` | Deterministic static scan (44 rules): coverage, file hashes, gaps |
+| `review_and_gate` | Static gate per required rule; never claims rendered readiness |
+| `find_ui_references` | Optional niblet real-screen search (`NIBLET_TOKEN`) |
+| `get_design_reference` | Optional niblet structured reference (`NIBLET_TOKEN`) |
 <!-- tools:end -->
-</tbody>
-</table>
 
-<div align="center">
+**Resources:** `designer://skill` · `designer://reference/{+name}` · **Prompt:** `design` (`task`, optional `aesthetic`)
 
-[![resources](https://img.shields.io/badge/resources-designer://skill-7c3aed?style=flat-square)](#tools)
-[![prompt](https://img.shields.io/badge/prompt-design-10b981?style=flat-square)](#tools)
+## Development
 
-</div>
-
-**Resources:** `designer://skill` · `designer://reference/{+name}`
-
-**Prompt:** `design` (args: `task` required, `aesthetic` optional)
-
-<br />
-
-<div align="center">
-
-[![development](https://img.shields.io/badge/Development-f59e0b?style=for-the-badge)](#development)
-
-</div>
+[![dev](https://img.shields.io/badge/5_·_Development-f59e0b?style=for-the-badge)](#development)
 
 ```bash
 cd designer-skill-mcp
-npm install
-npm run build   # syncs skills/designer-skill/ → assets/skill/, compiles TypeScript
-npm test
+npm ci
+npm run build   # syncs skills/ → assets/, compiles TypeScript
+npm test        # vitest; `npm run smoke` installs the packed tarball and drives it
 ```
 
-**HTTP mode** (remote clients):
+**HTTP mode** (Streamable HTTP at `/mcp`):
 
 ```bash
-node dist/index.js --http --port 3017 --root /abs/project   # 127.0.0.1 (default)
-DESIGNER_SKILL_HTTP_TOKEN=… node dist/index.js --http --port 3017 --host 0.0.0.0 --root /abs/project
+node dist/index.js --http --port 3017 --root /abs/project                     # 127.0.0.1
+DESIGNER_SKILL_HTTP_TOKEN=… node dist/index.js --http --host 0.0.0.0 --root /abs/project
 ```
 
-Endpoint: `http://127.0.0.1:3017/mcp` (Streamable HTTP). Loopback binds validate the Host header against DNS rebinding. A non-loopback bind requires `DESIGNER_SKILL_HTTP_TOKEN` (sent as `Authorization: Bearer …`) and at least one `--root`.
+Loopback binds validate the Host header. A non-loopback bind requires `DESIGNER_SKILL_HTTP_TOKEN` (`Authorization: Bearer …`) and at least one `--root`.
 
-**Local checkout:** replace `npx` with `"command": "node", "args": ["/abs/path/to/designer-skill-mcp/dist/index.js"]` in any config above.
-
-<br />
+**Release:** `./scripts/release.sh "notes"` bumps and syncs every version, verifies, tags and pushes; [`publish.yml`](.github/workflows/publish.yml) publishes npm (with provenance), the MCP registry entry and the GitHub release. Contract details: [`docs/HARDENING.md`](docs/HARDENING.md).
 
 <div align="center">
 
