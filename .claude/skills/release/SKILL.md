@@ -24,6 +24,8 @@ Repo-local maintainer skill; it is not shipped to plugin users.
 
 Rerunning after a partial run is safe: an existing tag at HEAD resumes at the push.
 
+`PUBLISH_LOCAL=1 ./scripts/release.sh "Notes"` publishes to npm from this machine's npm login (no provenance) before pushing the tag. It builds, tests and smoke-tests a clean worktree of the tag first. The CI npm job then finds the version on npm and skips it. Use this until an `NPM_TOKEN` secret exists.
+
 `publish.yml` (on `v*.*.*` tags) re-verifies versions against the tag, rebuilds and tests, then:
 - `npm publish --provenance` (skipped if the version exists; needs the `NPM_TOKEN` secret in the `npm` environment);
 - MCP registry `mcp-publisher validate` + `publish` via GitHub OIDC (fatal on failure);
