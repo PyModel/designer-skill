@@ -33,6 +33,33 @@ npm i @pymodel/designer-skill-mcp
 
 <br />
 
+### Paste into your agent
+
+Fastest path: copy this into Claude Code, Codex, Cursor, or any MCP client's chat. The agent installs the skill, wires the MCP, and verifies the tools. No API key.
+
+```text
+Add designer-skill alongside Niblet Designer UI. It is optional and keyless: it routes a design request, loads the right reference, and gates the ship. Niblet supplies the real screens and materials.
+
+1. Install or refresh the skill into the user skill directory (not this project):
+npx skills add PyModel/designer-skill --skill designer-skill -g -y
+
+2. Add the local MCP using this client's native MCP configuration, in the user-level (not project-level) config:
+Name: designer-skill
+Transport: stdio
+Command: npx
+Args: -y @pymodel/designer-skill-mcp@latest
+
+No API key is needed. Do not add one.
+
+3. Verify: list the designer-skill server's tools and confirm get_preflight_brief, dispatch_intent, review_and_gate are present. Do not run a sample check.
+
+When setup is complete, confirm that the designer-skill skill is installed and that the three tools are exposed. On UI work from now on: call get_preflight_brief first, use dispatch_intent to load only the references it recommends, pull screen references and materials from the niblet server, then call review_and_gate on the changed files before saying the work is done. If there is an active UI task, continue it. Otherwise say: "designer-skill is ready and paired with Niblet."
+```
+
+Using it without Niblet? Drop the "pull screen references and materials from the niblet server" clause; everything else stands.
+
+<br />
+
 <table width="100%">
 <tr>
 <td width="33%" valign="top" bgcolor="#ecfdf5">
