@@ -437,7 +437,7 @@ npx -y @pymodel/designer-skill-mcp
 
 If that fails:
 - **Network blocked?** `npx` needs to hit the npm registry. Check your proxy / firewall.
-- **Node version too old?** `node --version` should be ≥ 18. The package's `engines.node` is `>=18`.
+- **Node version too old?** `node --version` should be ≥ 22. The package's `engines.node` is `>=22`.
 - **Permission issue?** The `npm` cache directory needs to be writable.
 
 ### "I see `mcp_designer-skill_get_reference` but not the one I want"

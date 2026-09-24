@@ -153,6 +153,41 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "required": {
+                  "const": true
+                },
+                "status": {
+                  "const": "PASS"
+                }
+              },
+              "required": [
+                "required",
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "evidence": {
+                  "contains": {
+                    "properties": {
+                      "origin": {
+                        "enum": [
+                          "executed",
+                          "observed"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "origin"
+                    ]
+                  }
+                }
+              }
+            }
           }
         ]
       }
@@ -280,62 +315,23 @@
               ]
             },
             "items": {
-              "allOf": [
-                {
-                  "if": {
-                    "properties": {
-                      "required": {
-                        "const": true
-                      }
-                    }
-                  },
-                  "then": {
-                    "properties": {
-                      "status": {
-                        "enum": [
-                          "PASS",
-                          "NOT_APPLICABLE"
-                        ]
-                      }
-                    }
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "required": {
-                        "const": true
-                      },
-                      "status": {
-                        "const": "PASS"
-                      }
-                    },
-                    "required": [
-                      "required",
-                      "status"
-                    ]
-                  },
-                  "then": {
-                    "properties": {
-                      "evidence": {
-                        "contains": {
-                          "properties": {
-                            "origin": {
-                              "enum": [
-                                "executed",
-                                "observed"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "origin"
-                          ]
-                        }
-                      }
-                    }
+              "if": {
+                "properties": {
+                  "required": {
+                    "const": true
                   }
                 }
-              ]
+              },
+              "then": {
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "PASS",
+                      "NOT_APPLICABLE"
+                    ]
+                  }
+                }
+              }
             }
           },
           "findings": {

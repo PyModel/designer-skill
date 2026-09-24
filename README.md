@@ -496,11 +496,11 @@ npm test
 **HTTP mode** (remote clients):
 
 ```bash
-node dist/index.js --http --port 3017             # 127.0.0.1 (default)
-node dist/index.js --http --port 3017 --host 0.0.0.0  # public: add auth/proxy
+node dist/index.js --http --port 3017 --root /abs/project   # 127.0.0.1 (default)
+DESIGNER_SKILL_HTTP_TOKEN=… node dist/index.js --http --port 3017 --host 0.0.0.0 --root /abs/project
 ```
 
-Endpoint: `http://127.0.0.1:3017/mcp` (Streamable HTTP). Includes Origin guard against DNS-rebinding; no built-in auth for public exposure.
+Endpoint: `http://127.0.0.1:3017/mcp` (Streamable HTTP). Loopback binds validate the Host header against DNS rebinding. A non-loopback bind requires `DESIGNER_SKILL_HTTP_TOKEN` (sent as `Authorization: Bearer …`) and at least one `--root`.
 
 **Local checkout:** replace `npx` with `"command": "node", "args": ["/abs/path/to/designer-skill-mcp/dist/index.js"]` in any config above.
 

@@ -25,6 +25,10 @@ if [[ $# -gt 0 && "$1" =~ ^v?[0-9] ]]; then
   VERSION="${1#v}"
   shift
   [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version \"$VERSION\" is not x.y.z"
+elif git rev-parse -q --verify "refs/tags/v$(current_version)" >/dev/null &&
+  [[ "$(git rev-parse "v$(current_version)^{commit}")" == "$(git rev-parse HEAD)" ]]; then
+  # A previous run already committed and tagged the bump: resume it, never bump twice.
+  VERSION="$(current_version)"
 else
   # shellcheck disable=SC2016 # JS template literal, not shell expansion
   VERSION="$(node -e 'const [a, b] = process.argv[1].split(".").map(Number); console.log(`${a}.${b + 1}.0`)' "$(current_version)")"
@@ -47,15 +51,17 @@ publish_local() {
   local wt
   wt="$(mktemp -d)"
   git worktree add --quiet --detach "$wt" "$TAG"
+  # One && chain: bash ignores `set -e` inside a subshell on the left of `||`,
+  # so each step must gate the next explicitly or a failed test would still publish.
   (
-    cd "$wt/designer-skill-mcp"
-    npm ci
-    npm run build
-    git diff --exit-code -- assets/
-    node --test checks/core.mjs
-    npm test
-    node scripts/smoke-tarball.mjs
-    npm publish --access public --ignore-scripts
+    cd "$wt/designer-skill-mcp" &&
+      npm ci &&
+      npm run build &&
+      git diff --exit-code -- assets/ &&
+      node --test checks/core.mjs &&
+      npm test &&
+      node scripts/smoke-tarball.mjs &&
+      npm publish --access public --ignore-scripts
   ) || { git worktree remove --force "$wt"; die "local publish failed; fix and rerun (the tag is reused)"; }
   git worktree remove --force "$wt"
 }

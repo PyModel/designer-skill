@@ -169,15 +169,15 @@ export function shouldIgnoreDetectionFile(relPath, config) {
   return matchesAnyGlob(relPath, config?.ignoreFiles);
 }
 
-/** A directory can be pruned when a glob ending in `/**` covers everything under it. */
+/** A directory can be pruned when a glob ending in `/**` covers everything
+ *  under it. The whole glob is matched against a path inside the directory, so
+ *  pruning keeps the glob's own anchoring (`legacy/**` never prunes `src/legacy`). */
 export function shouldPruneDetectionDirectory(relDir, config) {
   const globs = config?.ignoreFiles;
   if (!Array.isArray(globs)) return false;
   return globs.some((glob) => {
     const text = String(glob);
-    if (!text.endsWith('/**')) return false;
-    const prefix = text.slice(0, -3);
-    return prefix !== '' && prefix !== '**' && matchesGlob(relDir, prefix);
+    return text.endsWith('/**') && text !== '**/**' && matchesGlob(`${relDir}/x`, text);
   });
 }
 

@@ -14,7 +14,7 @@ import { detectText } from "../assets/engine/engines/regex/detect-text.mjs";
 // @ts-expect-error untyped engine module
 import { createScanFs } from "../assets/engine/node/scan-fs.mjs";
 // @ts-expect-error untyped engine module
-import { matchesGlob, assertValidGlob } from "../assets/engine/lib/designer-skill-config.mjs";
+import { matchesGlob, assertValidGlob, shouldPruneDetectionDirectory } from "../assets/engine/lib/designer-skill-config.mjs";
 // @ts-expect-error untyped engine module
 import { buildImportGraph } from "../assets/engine/node/file-system.mjs";
 import { scanAntipatterns } from "../src/detect.js";
@@ -66,6 +66,12 @@ describe("static cascade fidelity", () => {
     const gap = await html(page("<style>.t{color:color-mix(in srgb,red,blue);background:#fff}</style>", lowContrast));
     expect(ids(gap)).not.toContain("low-contrast");
     expect(gap.gaps).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "UNEVALUABLE_COLOR", rule: "low-contrast" })]));
+  });
+  it("scopes custom properties to the declaring subtree", async () => {
+    const body = '<div class="a"><p class="t">in</p></div><p class="t">out</p>';
+    const css = "<style>:root{--fg:#111}.a{--fg:#eee}.t{color:var(--fg);background:#fff}</style>";
+    const r = await html(page(css, body));
+    expect(r.findings.filter((f) => f.antipattern === "low-contrast")).toHaveLength(1);
   });
   it("survives a var() expansion bomb", async () => {
     const vars = Array.from({ length: 30 }, (_, i) => `--v${i + 1}:var(--v${i}) var(--v${i});`).join("");
@@ -156,6 +162,13 @@ describe("glob matching", () => {
       const reference = new RegExp(`^${glob.replace(/\*/g, "[^/]*").replace(/\?/g, "[^/]")}$`);
       for (const path of paths) expect(matchesGlob(path, glob), `${glob} vs ${path}`).toBe(reference.test(path));
     }
+  });
+
+  it.each([
+    ["legacy", "legacy/**", true], ["src/legacy", "legacy/**", false], ["src/legacy", "**/legacy/**", true],
+    ["a/gen", "*/gen/**", true], ["a/b/gen", "*/gen/**", false], ["x", "**/**", false], ["x", "x/*.css", false],
+  ])("prunes %s for %s → %s, keeping the glob's anchoring", (dir, glob, expected) => {
+    expect(shouldPruneDetectionDirectory(dir, { ignoreFiles: [glob] })).toBe(expected);
   });
 
   it("rejects oversized or brace-bomb globs", () => {

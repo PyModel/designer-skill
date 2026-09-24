@@ -206,7 +206,9 @@ export async function getDesignReference(
   const markdown = str(data.markdown, MAX_REFERENCE_CHARS + 1);
   if (!markdown) return { configured: true, text: "No design reference recorded for that screen. Continue with the local design system." };
   const truncated = markdown.length > MAX_REFERENCE_CHARS;
-  const body = (truncated ? markdown.slice(0, MAX_REFERENCE_CHARS) : markdown).replaceAll("</untrusted-reference>", "&lt;/untrusted-reference&gt;");
+  // Neutralize every opening/closing variant of the boundary tag (case, spacing).
+  const body = (truncated ? markdown.slice(0, MAX_REFERENCE_CHARS) : markdown)
+    .replace(/<(\s*\/?\s*untrusted-reference\b)/gi, "&lt;$1");
   return {
     configured: true,
     text: `${UNTRUSTED_NOTE}\n<untrusted-reference source="niblet.com">\n${body}\n</untrusted-reference>` +

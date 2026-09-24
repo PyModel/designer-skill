@@ -11,7 +11,7 @@ description: Verify designer-skill MCP is installed and reachable
 npx -y @pymodel/designer-skill-mcp --version
 ```
 
-If this prints a version, the npm package resolves. If not, check Node.js (18+) and network access.
+If this prints a version, the npm package resolves. If not, check Node.js (22+) and network access.
 
 ## Step 2: Verify MCP is connected
 
@@ -48,4 +48,4 @@ If the plugin did not wire MCP, add repo-root `mcp.json` (or `.cursor/mcp.json`)
 }
 ```
 
-Pin a version for teams: replace `@latest` with `@pymodel/designer-skill-mcp@0.17.0`.
+Pin a version for teams: replace `@pymodel/designer-skill-mcp@latest` with `@pymodel/designer-skill-mcp@0.17.0` in `args`.

@@ -71,6 +71,16 @@ describe("HTTP transport", () => {
     expect((await post(url, initialize, { authorization: "Bearer wrong!" })).status).toBe(401);
     expect((await post(url, initialize, { authorization: "Bearer s3cret" })).status).toBe(200);
   });
+  it("refuses to start with a --root that does not exist", async () => {
+    await expect(runHttp({ port: 0, host: "127.0.0.1", roots: ["/no/such/designer-root"], allowedHosts: [] }))
+      .rejects.toMatchObject({ code: "INPUT_INVALID" });
+  });
+  it("rejects a token of the right length but wrong content, and one of a different length", async () => {
+    const url = await start({ token: "abcdef" });
+    for (const bad of ["abcdeg", "abc", "abcdefabcdef"]) {
+      expect((await post(url, initialize, { authorization: `Bearer ${bad}` })).status).toBe(401);
+    }
+  });
   it("rejects a port that is already in use instead of hanging", async () => {
     const url = await start();
     const port = Number(new URL(url).port);

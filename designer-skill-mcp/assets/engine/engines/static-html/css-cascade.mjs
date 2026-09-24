@@ -1130,9 +1130,13 @@ function buildStaticStyleMap(root, staticDoc, sheets, modules, profile, filePath
 
   const computeNode = (node, parentStyle, parentCustom) => {
     const specifiedMap = specified.get(node) || new Map();
-    const customProps = new Map(parentCustom);
+    // Children share the parent's map until they declare a custom property.
+    let customProps = parentCustom;
     for (const [prop, decl] of specifiedMap) {
-      if (prop.startsWith('--')) customProps.set(prop, substituteVars(decl.value, customProps));
+      if (!prop.startsWith('--')) continue;
+      const value = substituteVars(decl.value, customProps);
+      if (customProps === parentCustom) customProps = new Map(parentCustom);
+      customProps.set(prop, value);
     }
     const values = {};
     for (const prop of Object.keys(STATIC_DEFAULT_STYLE)) {

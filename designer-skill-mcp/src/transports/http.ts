@@ -3,13 +3,14 @@
 // the Host header against localhost names when bound to a loopback address
 // (DNS-rebinding protection) and caps JSON bodies. Any other bind address
 // requires a bearer token and at least one --root.
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { NextFunction, Request, Response } from "express";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "../server.js";
+import { projectRoot } from "../scope.js";
 
 export const LOOPBACK_HOSTS: readonly string[] = ["127.0.0.1", "localhost", "::1"];
 
@@ -24,12 +25,14 @@ export interface HttpOptions {
 const jsonRpcError = (res: Response, status: number, code: number, message: string) =>
   res.status(status).json({ jsonrpc: "2.0", error: { code, message }, id: null });
 
+// Fixed-length digests, so the comparison time reveals neither content nor length.
+const digest = (value: string) => createHash("sha256").update(value).digest();
+
 function bearerAuth(token: string) {
-  const expected = Buffer.from(token);
+  const expected = digest(token);
   return (req: Request, res: Response, next: NextFunction) => {
     const header = req.headers.authorization ?? "";
-    const supplied = Buffer.from(header.startsWith("Bearer ") ? header.slice(7) : "");
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+    if (!timingSafeEqual(digest(header.startsWith("Bearer ") ? header.slice(7) : ""), expected)) {
       jsonRpcError(res, 401, -32001, "Unauthorized.");
       return;
     }
@@ -45,12 +48,14 @@ export function assertHttpExposure({ host, roots, token }: Pick<HttpOptions, "ho
 
 export async function runHttp(options: HttpOptions): Promise<Server> {
   assertHttpExposure(options);
+  // Resolve once: a bad --root stops startup instead of failing every request.
+  const roots = options.roots.map((root) => projectRoot(root));
   const app = createMcpExpressApp({ host: options.host, ...(options.allowedHosts.length ? { allowedHosts: options.allowedHosts } : {}) });
   if (options.token) app.use(bearerAuth(options.token));
 
   app.post("/mcp", async (req: Request, res: Response) => {
     try {
-      const server = createServer({ allowedRoots: options.roots });
+      const server = createServer({ allowedRoots: roots });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => {
         void transport.close();

@@ -34,6 +34,12 @@ describe("run-report schema coherence", () => {
   ])("rejects %s", (_label, patch) => {
     expect(validate({ ...base, ...patch })).toBe(false);
   });
+  it("rejects an attested-only required PASS even when UI readiness is not PASS", () => {
+    expect(validate({ ...base, mode: "audit", changes: [], taskStatus: "PARTIAL", uiReadiness: "NOT_VERIFIED", checks: [check("PASS", "attested")] })).toBe(false);
+  });
+  it("accepts attested evidence on an optional check", () => {
+    expect(validate({ ...base, checks: [check("PASS"), { ...check("PASS", "attested", false), id: "manual" }] })).toBe(true);
+  });
   it("allows a completed audit that reports FAIL", () => {
     expect(validate({ ...base, mode: "audit", changes: [], uiReadiness: "FAIL", checks: [check("FAIL")] })).toBe(true);
   });
