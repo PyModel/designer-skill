@@ -209,7 +209,7 @@ If the design feels too safe, push back in plain language: "It's a bit safe. Mak
 
 `review_and_gate` is the ship gate. It is **static only**: it reads your source files and never opens a browser.
 
-**What it checks.** Three required rules run on every scanned file: `broken-image`, `low-contrast` and `clipped-overflow-container`. You can make more of the 44 detector rules blocking with the `blockingRules` argument. For each required rule it reports one status:
+**What it checks.** Three rules are required by default: `broken-image`, `low-contrast` and `clipped-overflow-container`. The gate does not promise they run on every file; it reports their coverage, since a rule can only run on file types it supports. You can make more of the 44 detector rules blocking with the `blockingRules` argument. For each required rule it reports one status:
 
 | Rule status | Meaning |
 |---|---|

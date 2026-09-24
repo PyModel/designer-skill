@@ -27,7 +27,7 @@ Rerunning after a partial run is safe: an existing tag at HEAD resumes at the pu
 `PUBLISH_LOCAL=1 ./scripts/release.sh "Notes"` publishes to npm from this machine's npm login (no provenance) before pushing the tag. It builds, tests and smoke-tests a clean worktree of the tag first. npm processes uploads asynchronously; the CI npm job waits up to 10 minutes for the version and then skips it. Use this until the npm trusted publisher is configured.
 
 `publish.yml` (on `v*.*.*` tags) re-verifies versions against the tag, rebuilds and tests, then:
-- `npm publish --provenance` via npm trusted publishing (OIDC, no token; skipped if the version exists). One-time setup on npmjs.com: package Settings → Trusted publisher → GitHub Actions, `PyModel/designer-skill`, workflow `publish.yml`, environment `npm`. `npm trust github` cannot do it from a 2FA-bypass token. Until then the job falls back to waiting for a `PUBLISH_LOCAL=1` publish;
+- `npm publish --provenance` via npm trusted publishing (OIDC, no token; skipped if the version exists). One-time setup on npmjs.com: package Settings → Trusted publisher → GitHub Actions, `PyModel/designer-skill`, workflow `publish.yml`, environment `npm`, with direct publishing allowed (`npm trust github … --allow-publish`). `npm trust github` cannot do it from a 2FA-bypass token. Until then the job falls back to waiting for a `PUBLISH_LOCAL=1` publish;
 - MCP registry `mcp-publisher validate` + `publish` via GitHub OIDC (fatal on failure). The namespace is case-sensitive: `io.github.PyModel/*`;
 - `gh release create` from the tag notes (skipped if it exists).
 
