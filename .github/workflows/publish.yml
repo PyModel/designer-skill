@@ -51,7 +51,9 @@ jobs:
 
       - name: Pack the verified tarball
         working-directory: designer-skill-mcp
-        run: npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pkg"
+        run: |
+          mkdir -p "$RUNNER_TEMP/pkg"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pkg"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

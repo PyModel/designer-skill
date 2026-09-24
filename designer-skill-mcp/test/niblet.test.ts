@@ -2,7 +2,7 @@
 // experience) and the full REST path against a local stub of api.niblet.com.
 import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
-import { afterAll, afterEach, describe, it, expect } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, it, expect } from "vitest";
 import { findUiReferences, getDesignReference, nibletConfigured } from "../src/niblet.js";
 
 let stub: Server | null = null;
@@ -73,8 +73,9 @@ describe("niblet adapter — unconfigured", () => {
 });
 
 describe("niblet adapter — REST path against local stub", () => {
+  beforeAll(startStub);
+
   it("finds references and points at get_design_reference for web screens", async () => {
-    await startStub();
     process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
     process.env.NIBLET_API_ORIGIN = origin;
     const answer = await findUiReferences("subscription settings with clear renewal status", { platform: "web" });
