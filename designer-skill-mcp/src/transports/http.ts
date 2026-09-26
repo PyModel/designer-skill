@@ -1,18 +1,20 @@
 // Streamable HTTP transport, stateless: a fresh server + transport per request
-// (no session store). Built on the SDK's createMcpExpressApp, which validates
-// the Host header against localhost names when bound to a loopback address
-// (DNS-rebinding protection) and caps JSON bodies. Any other bind address
-// requires a bearer token and at least one --root.
+// (no session store). Every bind needs at least one --root; a non-loopback bind
+// also needs a bearer token. Middleware order is the security boundary: the
+// Host header (DNS-rebinding protection) and the token are checked before any
+// JSON body is parsed.
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import type { NextFunction, Request, Response } from "express";
-import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
+import express, { type NextFunction, type Request, type Response } from "express";
+import { hostHeaderValidation } from "@modelcontextprotocol/sdk/server/middleware/hostHeaderValidation.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer } from "../server.js";
 import { projectRoot } from "../scope.js";
 
 export const LOOPBACK_HOSTS: readonly string[] = ["127.0.0.1", "localhost", "::1"];
+/** Host-header hostnames of a loopback bind, in URL.hostname form (IPv6 keeps its brackets). */
+const LOOPBACK_HOSTNAMES: readonly string[] = ["localhost", "127.0.0.1", "[::1]"];
 
 export interface HttpOptions {
   port: number;
@@ -41,17 +43,23 @@ function bearerAuth(token: string) {
 }
 
 export function assertHttpExposure({ host, roots, token }: Pick<HttpOptions, "host" | "roots" | "token">): void {
+  if (!roots.length) {
+    throw new Error(`HTTP mode requires at least one --root: every local process and OS user can reach ${host}, so the readable project directories must be explicit.`);
+  }
   if (LOOPBACK_HOSTS.includes(host)) return;
   if (!token) throw new Error(`Binding ${host} exposes the server beyond this machine: set DESIGNER_SKILL_HTTP_TOKEN (clients send it as a Bearer token).`);
-  if (!roots.length) throw new Error(`Binding ${host} requires at least one --root to limit which project directories clients can read.`);
 }
 
 export async function runHttp(options: HttpOptions): Promise<Server> {
   assertHttpExposure(options);
   // Resolve once: a bad --root stops startup instead of failing every request.
   const roots = options.roots.map((root) => projectRoot(root));
-  const app = createMcpExpressApp({ host: options.host, ...(options.allowedHosts.length ? { allowedHosts: options.allowedHosts } : {}) });
+  const app = express();
+  // --allowed-host adds names; a loopback bind always keeps its own.
+  const hostnames = [...(LOOPBACK_HOSTS.includes(options.host) ? LOOPBACK_HOSTNAMES : []), ...options.allowedHosts];
+  if (hostnames.length) app.use(hostHeaderValidation(hostnames));
   if (options.token) app.use(bearerAuth(options.token));
+  app.use(express.json());
 
   app.post("/mcp", async (req: Request, res: Response) => {
     try {

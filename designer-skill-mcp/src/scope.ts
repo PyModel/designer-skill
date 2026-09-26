@@ -186,13 +186,14 @@ export function selectScanFiles(cwd: string, target: string, filters: ScanFilter
       }
       const rel = toPosix(relative(root, join(requested, listed)));
       const parts = rel.split("/");
-      if (parts.length > SCAN_LIMITS.depth) throw scanLimit("depth", parts.length, rel);
       const skippedDir = parts.slice(0, -1).findIndex((part, i) =>
         filters.skipDirectories.has(part) || filters.isPrunedDirectory(parts.slice(0, i + 1).join("/")));
       if (skippedDir !== -1) {
         excluded.add(parts.slice(0, skippedDir + 1).join("/"));
         continue;
       }
+      const depth = listed.split("/").length - 1; // directory levels below the target, as the walker counts
+      if (depth > SCAN_LIMITS.depth) throw scanLimit("depth", depth, rel);
       if (++considered > SCAN_LIMITS.entries) throw scanLimit("entries", considered, rel);
       const abs = join(root, rel);
       let stat;
@@ -339,6 +340,12 @@ export function loadDetectorPolicy(root: string, options: PolicyOptions): Detect
         }
         if (!policy.ignoreRules.includes(rule)) policy.ignoreRules.push(rule);
       }
+      // A per-developer file ignore hides every rule, required ones included.
+      if (local && options.protectedRules.size && Array.isArray(values.ignoreFiles) && values.ignoreFiles.length) {
+        throw new DesignError("CONFIG_INVALID",
+          `${where}.ignoreFiles cannot hide files from required rules: it is per-developer and git-excluded. Move it to the committed .designer-skill/config.json.`,
+          { path: label });
+      }
       for (const glob of (values.ignoreFiles as string[] | undefined) ?? []) {
         try { options.validateGlob(glob); }
         catch (error) {
@@ -348,7 +355,14 @@ export function loadDetectorPolicy(root: string, options: PolicyOptions): Detect
       }
       if (values.ignoreValues !== undefined) {
         if (!Array.isArray(values.ignoreValues)) throw new DesignError("CONFIG_INVALID", `${where}.ignoreValues must be an array.`, { path: label });
-        policy.ignoreValues.push(...options.normalizeIgnoreValues(values.ignoreValues));
+        const entries = options.normalizeIgnoreValues(values.ignoreValues) as IgnoreValueEntry[];
+        const guarded = local ? entries.find((entry) => options.protectedRules.has(entry.rule)) : undefined;
+        if (guarded) {
+          throw new DesignError("CONFIG_INVALID",
+            `${where}.ignoreValues cannot waive values of required rule "${guarded.rule}": it is per-developer and git-excluded. Waive it in the committed .designer-skill/config.json.`,
+            { path: label, rule: guarded.rule });
+        }
+        policy.ignoreValues.push(...entries);
       }
       if (values.designSystem !== undefined) {
         const design = values.designSystem as Record<string, unknown> | null;

@@ -216,7 +216,7 @@ node dist/index.js --http --port 3017 --root /abs/project                     # 
 DESIGNER_SKILL_HTTP_TOKEN=… node dist/index.js --http --host 0.0.0.0 --root /abs/project
 ```
 
-Loopback binds validate the Host header. A non-loopback bind requires `DESIGNER_SKILL_HTTP_TOKEN` (`Authorization: Bearer …`) and at least one `--root`.
+Every HTTP bind requires at least one `--root`. Loopback binds validate the Host header; a non-loopback bind also requires `DESIGNER_SKILL_HTTP_TOKEN` (`Authorization: Bearer …`).
 
 **Release:** `./scripts/release.sh "notes"` bumps and syncs every version, verifies, tags and pushes; [`publish.yml`](.github/workflows/publish.yml) publishes npm (with provenance), the MCP registry entry and the GitHub release. Contract details: [`docs/HARDENING.md`](docs/HARDENING.md).
 

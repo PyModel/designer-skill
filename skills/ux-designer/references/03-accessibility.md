@@ -59,7 +59,7 @@ Functionality using dragging can be operated with a single pointer without dragg
 ```
 
 ### Target Size (Minimum) - 2.5.8 (AA)
-Touch targets must be at least 24×24 CSS pixels, with exceptions for inline links, user agent controls, and essential presentations.
+Targets must be at least 24×24 CSS pixels. Exceptions: undersized targets spaced so a 24px circle on each does not overlap another target, an equivalent control that meets the size, targets inline in text, sizes set by the user agent, and essential presentations. The AAA level (2.5.5) is 44×44.
 
 ### Accessible Authentication (Minimum) - 3.3.8 (AA)
 Authentication processes don't require cognitive function tests (like remembering passwords) unless alternatives are provided.

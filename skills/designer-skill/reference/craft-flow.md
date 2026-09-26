@@ -6,7 +6,9 @@ Before writing code, you need: PRODUCT.md loaded, register identified and the ma
 
 Treat any approved visual direction (generated mock or stated reference) as a concrete contract for composition, hierarchy, density, atmosphere, signature motifs, and distinctive visual moves. Don't let mocks replace structure, copy, accessibility, or state design. But if the live result lacks the approved direction's major ingredients, the implementation is wrong.
 
-### Gates: do not compress
+### Gates for a new direction: do not compress
+
+These gates apply when `implement` sets a new or changed direction. Inside an established identity (`brandPolicy: preserve`), the existing tokens and components are the approved direction: gates 2–4 are already met, and a bounded change goes straight to code. Audit and plan modes never reach them.
 
 Craft has **multiple user gates**, not one. When the harness has native image generation, the gate sequence before code is:
 

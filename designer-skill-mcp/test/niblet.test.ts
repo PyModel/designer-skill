@@ -13,6 +13,11 @@ const savedOrigin = process.env.NIBLET_API_ORIGIN;
 function startStub(): Promise<void> {
   stub = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (url.searchParams.get("q") === "null-body" || url.searchParams.get("screenId") === "scr-null") {
+      res.setHeader("content-type", "application/json");
+      res.end("null");
+      return;
+    }
     if (url.pathname === "/v1/search") {
       res.setHeader("content-type", "application/json");
       res.end(
@@ -99,5 +104,14 @@ describe("niblet adapter — REST path against local stub", () => {
     const answer = await getDesignReference({ screenId: "scr-escape" });
     const tags = [...answer.text.matchAll(/<\s*\/?\s*untrusted-reference\b/gi)].map((m) => m[0]);
     expect(tags).toEqual(["<untrusted-reference", "</untrusted-reference"]);
+  });
+
+  it("degrades to guidance when the API answers with a non-object JSON body", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    for (const answer of [await findUiReferences("null-body"), await getDesignReference({ screenId: "scr-null" })]) {
+      expect(answer.configured).toBe(true);
+      expect(answer.text).toContain("not a JSON object");
+    }
   });
 });

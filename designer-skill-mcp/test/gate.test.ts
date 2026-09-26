@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { evaluateGate, reviewAndGate, validateRegistry, REQUIRED_STATIC_RULES } from "../src/gate.js";
-import { scanAntipatterns, type DetectionReport, type ScannedFile } from "../src/detect.js";
+import { evaluateGate, reviewAndGate, validateRegistry } from "../src/gate.js";
+import { scanAntipatterns, REQUIRED_STATIC_RULES, type DetectionReport, type ScannedFile } from "../src/detect.js";
 
 const roots: string[] = [];
 function root(): string {
@@ -116,6 +117,18 @@ describe("bundled detector integration", () => {
     expect(report.files.map((f) => f.path)).toEqual(["src/c.css"]);
   });
 
+  it("prunes a deep dependency directory in a git work tree instead of hitting the depth limit", async () => {
+    const cwd = root();
+    execFileSync("git", ["init", "-q"], { cwd });
+    const deep = join(cwd, "node_modules", ...Array.from({ length: 60 }, (_, i) => `d${i}`));
+    mkdirSync(deep, { recursive: true });
+    writeFileSync(join(deep, "x.css"), "a {}");
+    writeFileSync(join(cwd, "own.css"), "a {}");
+    const report = await scanAntipatterns(".", { cwd });
+    expect(report.coverage.enumeration).toBe("git");
+    expect(report.files.map((f) => f.path)).toEqual(["own.css"]);
+  });
+
   it("fails closed on malformed registry metadata", () => {
     expect(() => validateRegistry(undefined)).toThrow(); expect(() => validateRegistry([])).toThrow();
     expect(() => validateRegistry([{ id: "x", category: "slop" }])).toThrow(/Required rule/);
@@ -143,6 +156,33 @@ describe("detector policy", () => {
     const cwd = root(); writeFileSync(join(cwd, "index.html"), CLEAN_PAGE);
     writeConfig(cwd, "config.local.json", { ignoreRules: ["low-contrast"] });
     await expect(reviewAndGate(".", { cwd })).rejects.toMatchObject({ code: "CONFIG_INVALID", details: { rule: "low-contrast" } });
+  });
+
+  it.each([
+    ["ignoreFiles", { ignoreFiles: ["bad.html"] }],
+    ["ignoreValues", { ignoreValues: [{ rule: "low-contrast", value: "#777" }] }],
+  ])("rejects per-developer %s that could hide a failing required rule", async (_field, detector) => {
+    const cwd = root();
+    writeFileSync(join(cwd, "bad.html"), '<!doctype html><html><body><p style="color:#777;background:#888">x</p></body></html>');
+    writeFileSync(join(cwd, "clean.html"), CLEAN_PAGE);
+    await expect(reviewAndGate(".", { cwd })).resolves.toMatchObject({ staticStatus: "FAIL" });
+    writeConfig(cwd, "config.local.json", detector);
+    await expect(reviewAndGate(".", { cwd })).rejects.toMatchObject({ code: "CONFIG_INVALID" });
+  });
+
+  it("allows per-developer ignoreValues for an advisory rule", async () => {
+    const cwd = root(); writeFileSync(join(cwd, "index.html"), CLEAN_PAGE);
+    writeConfig(cwd, "config.local.json", { ignoreValues: [{ rule: "overused-font", value: "inter" }] });
+    await expect(reviewAndGate(".", { cwd })).resolves.toMatchObject({ waivedRules: [] });
+  });
+
+  it("applies the same required-rule policy to detect_antipatterns as to the gate", async () => {
+    const cwd = root(); writeFileSync(join(cwd, "index.html"), CLEAN_PAGE);
+    writeConfig(cwd, "config.local.json", { ignoreRules: ["low-contrast"] });
+    await expect(scanAntipatterns(".", { cwd })).rejects.toMatchObject({ code: "CONFIG_INVALID", details: { rule: "low-contrast" } });
+    writeConfig(cwd, "config.local.json", {});
+    writeConfig(cwd, "config.json", { ignoreRules: ["low-contrast"] });
+    await expect(scanAntipatterns(".", { cwd })).resolves.toMatchObject({ waivedRules: ["low-contrast"] });
   });
 
   it("allows a per-developer waiver of an advisory rule", async () => {

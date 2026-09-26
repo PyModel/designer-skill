@@ -369,6 +369,8 @@ Step 1        Step 2         Step 3        Done!
 
 ### Key Metrics
 
+Targets below are illustrative starting points, not sourced benchmarks; set real targets from your own baseline.
+
 | Metric | Target | How to measure |
 |--------|--------|---------------|
 | Sign-up completion | > 85% | Users who complete sign-up / started |

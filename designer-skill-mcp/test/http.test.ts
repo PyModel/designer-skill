@@ -14,9 +14,13 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
+function tempRoot(): string {
+  const dir = mkdtempSync(join(tmpdir(), "designer-http-")); dirs.push(dir); return dir;
+}
+
 async function start(options: Partial<Parameters<typeof runHttp>[0]> = {}) {
   vi.spyOn(console, "error").mockImplementation(() => undefined);
-  const server = await runHttp({ port: 0, host: "127.0.0.1", roots: [], allowedHosts: [], ...options });
+  const server = await runHttp({ port: 0, host: "127.0.0.1", roots: [tempRoot()], allowedHosts: [], ...options });
   servers.push(server);
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`;
 }
@@ -30,9 +34,22 @@ const post = (url: string, body: unknown, headers: Record<string, string> = {}) 
   headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
 });
 
+function rawPost(url: URL, host: string, body: string): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port: url.port, path: "/mcp", method: "POST",
+      headers: { host, "content-type": "application/json", accept: "application/json, text/event-stream" } },
+    (res) => { res.resume(); resolve(res.statusCode ?? 0); });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
 describe("HTTP exposure policy", () => {
   it("allows loopback binds without a token", () => {
-    for (const host of ["127.0.0.1", "localhost", "::1"]) expect(() => assertHttpExposure({ host, roots: [] })).not.toThrow();
+    for (const host of ["127.0.0.1", "localhost", "::1"]) expect(() => assertHttpExposure({ host, roots: ["/srv"] })).not.toThrow();
+  });
+  it("requires a --root for every HTTP bind, loopback included", () => {
+    for (const host of ["127.0.0.1", "0.0.0.0"]) expect(() => assertHttpExposure({ host, roots: [], token: "t" })).toThrow(/--root/);
   });
   it("requires a token and a root for any other bind", () => {
     expect(() => assertHttpExposure({ host: "0.0.0.0", roots: ["/srv"] })).toThrow(/DESIGNER_SKILL_HTTP_TOKEN/);
@@ -60,6 +77,17 @@ describe("HTTP transport", () => {
     });
     expect(status).toBe(403);
   });
+  it("keeps loopback Host names when --allowed-host adds a proxy name", async () => {
+    const url = new URL(await start({ allowedHosts: ["proxy.local"] }));
+    for (const [host, expected] of [["localhost", 200], ["proxy.local", 200], ["evil.example", 403]] as const) {
+      expect(await rawPost(url, host, JSON.stringify(initialize)), host).toBe(expected);
+    }
+  });
+  it("authenticates before parsing the body", async () => {
+    const url = await start({ token: "s3cret" });
+    const res = await fetch(url, { method: "POST", body: "{not json", headers: { "content-type": "application/json" } });
+    expect(res.status).toBe(401);
+  });
   it("rejects oversized JSON bodies", async () => {
     const url = await start();
     const res = await post(url, { ...initialize, pad: "x".repeat(200_000) });
@@ -84,7 +112,7 @@ describe("HTTP transport", () => {
   it("rejects a port that is already in use instead of hanging", async () => {
     const url = await start();
     const port = Number(new URL(url).port);
-    await expect(runHttp({ port, host: "127.0.0.1", roots: [], allowedHosts: [] })).rejects.toMatchObject({ code: "EADDRINUSE" });
+    await expect(runHttp({ port, host: "127.0.0.1", roots: [tempRoot()], allowedHosts: [] })).rejects.toMatchObject({ code: "EADDRINUSE" });
   });
   it("confines tools/call cwd to --root", async () => {
     const allowed = mkdtempSync(join(tmpdir(), "designer-http-")), other = mkdtempSync(join(tmpdir(), "designer-http-"));

@@ -463,7 +463,7 @@ Avoid: Different topics side by side
 - [ ] Keyboard navigation works correctly
 - [ ] Focus management on errors
 - [ ] Sufficient color contrast
-- [ ] Touch targets at least 44×44px
+- [ ] Touch targets 44×44px (never below the 24×24 WCAG AA floor)
 
 ---
 

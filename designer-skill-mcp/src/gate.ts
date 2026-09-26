@@ -1,7 +1,7 @@
 // A static check cannot certify an interface it never rendered, nor a rule it
 // never evaluated: coverage is reported per required rule, per scanned file.
 import { pathToFileURL } from "node:url";
-import { scanAntipatterns, formatDetectionResults, type DetectionReport, type DetectionFinding, type ScannedFile } from "./detect.js";
+import { scanAntipatterns, formatDetectionResults, REQUIRED_STATIC_RULES, type DetectionReport, type DetectionFinding, type ScannedFile } from "./detect.js";
 import { DesignError } from "./scope.js";
 import { bundledFile } from "./assets.js";
 
@@ -9,8 +9,6 @@ interface Rule { id: string; category: "slop" | "quality"; severity?: string }
 type RuleStatus = "RAN" | "WAIVED" | "UNSUPPORTED" | "UNRESOLVED";
 type CoverageFn = (ruleId: string, file: ScannedFile, designSystemStatus: string) => { status: Exclude<RuleStatus, "WAIVED">; reason?: string };
 
-/** Required static rules: blocking by default and required to have RUN for a static PASS. */
-export const REQUIRED_STATIC_RULES = ["broken-image", "low-contrast", "clipped-overflow-container"] as const;
 /** Required rules only a rendered check can evaluate; always reported as NOT_RUN here. */
 export const REQUIRED_RENDERED_RULES = ["text-overflow"] as const;
 const REPORTED_FINDINGS = 20;

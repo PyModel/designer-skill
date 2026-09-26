@@ -143,7 +143,7 @@ What needs the user's attention?
 **Duration guidelines:**
 - Short messages (no action): 4 seconds
 - Messages with action button: 6-8 seconds
-- Error messages: 8-10 seconds or until dismissed
+- Error messages: persist until dismissed
 - Never auto-dismiss critical errors
 
 **Placement:**
@@ -432,6 +432,8 @@ When user denied permission:
 ---
 
 ## Key Metrics
+
+Targets below are illustrative starting points, not sourced benchmarks; set real targets from your own baseline.
 
 | Metric | Target | Context |
 |--------|--------|---------|

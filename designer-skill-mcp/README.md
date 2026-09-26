@@ -55,7 +55,7 @@ designer-skill-mcp --http --port 3017 --root /abs/project          # loopback on
 DESIGNER_SKILL_HTTP_TOKEN=… designer-skill-mcp --http --host 0.0.0.0 --root /abs/project --allowed-host design.internal
 ```
 
-Stateless Streamable HTTP on `POST /mcp`. A non-loopback bind requires `DESIGNER_SKILL_HTTP_TOKEN` (sent as `Authorization: Bearer …`) and at least one `--root`. `designer-skill-mcp --help` lists every flag and variable.
+Stateless Streamable HTTP on `POST /mcp`. Every HTTP bind requires at least one `--root`; a non-loopback bind also requires `DESIGNER_SKILL_HTTP_TOKEN` (sent as `Authorization: Bearer …`). `designer-skill-mcp --help` lists every flag and variable.
 
 ## Development and validation
 

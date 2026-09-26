@@ -62,7 +62,7 @@ Use custom curves. Built-in CSS easings are too weak; they lack the punch that m
 --ease-out-expo:  cubic-bezier(0.16, 1, 0.3, 1);   /* Confident, decisive */
 ```
 
-**Never use `ease-in` for UI.** It starts slow, delaying the initial movement at the exact moment the user is watching most closely. A dropdown with `ease-in` at 300ms *feels* slower than `ease-out` at the same 300ms.
+**Keep `ease-in` for exits only.** On entrances and responses it starts slow, delaying the initial movement at the exact moment the user is watching most closely; on an exit, accelerating away reads as leaving. A dropdown with `ease-in` at 300ms *feels* slower than `ease-out` at the same 300ms.
 
 ❌ **Banned — feel dated and tacky:**
 ```css

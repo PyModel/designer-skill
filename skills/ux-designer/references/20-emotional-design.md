@@ -331,6 +331,8 @@ Usage:
 
 ## Key Metrics
 
+Targets below are illustrative starting points, not sourced benchmarks; set real targets from your own baseline.
+
 | Metric | Target | Context |
 |--------|--------|---------|
 | Net Promoter Score (NPS) | > 50 | User sentiment |

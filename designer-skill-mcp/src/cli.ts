@@ -75,9 +75,10 @@ Flags:
   --root <dir>           Authorize a project root (repeatable; also DESIGNER_SKILL_ROOTS=a,b).
                          Without it, stdio clients' MCP roots are honored when declared.
   --port <n>, --port=<n> HTTP port (default 3017, or PORT)
-  --host <addr>          HTTP bind address (default 127.0.0.1). Any non-loopback address
-                         requires DESIGNER_SKILL_HTTP_TOKEN and at least one --root.
-  --allowed-host <name>  Hostname (no port) allowed in the Host header of a non-loopback bind (repeatable)
+  --host <addr>          HTTP bind address (default 127.0.0.1). HTTP mode requires at least
+                         one --root; a non-loopback address also requires DESIGNER_SKILL_HTTP_TOKEN.
+  --allowed-host <name>  Extra hostname (no port) accepted in the Host header (repeatable);
+                         a loopback bind always accepts its own loopback names
   --version, -v          Print version and exit
   --check-update         Check npm for a newer release and exit
   --no-update-notifier   Skip update checks (also NO_UPDATE_NOTIFIER=1)

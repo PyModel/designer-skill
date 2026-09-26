@@ -47,10 +47,12 @@ export interface DetectionReport {
   ignoredValues: number;
 }
 
+/** Required static rules: blocking by default, required to have RUN for a static PASS, and waivable only in the committed config. */
+export const REQUIRED_STATIC_RULES = ["broken-image", "low-contrast", "clipped-overflow-container"] as const;
+
 export interface ScanOptions {
   cwd?: string;
-  useConfig?: boolean;
-  /** Rules that only the committed config may waive (required + blocking). */
+  /** Rules that only the committed config may waive. Defaults to the required static rules. */
   protectedRules?: ReadonlySet<string>;
 }
 
@@ -141,14 +143,12 @@ export async function scanAntipatterns(target: string, options: ScanOptions = {}
   const root = projectRoot(options.cwd ?? process.cwd());
   const engine = await loadEngine();
   const ruleIds = new Set(engine.registry.ANTIPATTERNS.map((rule) => rule.id));
-  const policy = options.useConfig === false
-    ? { ignoreRules: [], ignoreFiles: [], ignoreValues: [], designSystemEnabled: true, webRoot: null, waivedRules: [] }
-    : loadDetectorPolicy(root, {
-      ruleIds,
-      protectedRules: options.protectedRules ?? new Set(),
-      validateGlob: engine.config.assertValidGlob,
-      normalizeIgnoreValues: engine.config.normalizeIgnoreValueEntries,
-    });
+  const policy = loadDetectorPolicy(root, {
+    ruleIds,
+    protectedRules: options.protectedRules ?? new Set(REQUIRED_STATIC_RULES),
+    validateGlob: engine.config.assertValidGlob,
+    normalizeIgnoreValues: engine.config.normalizeIgnoreValueEntries,
+  });
   const selected = selectScanFiles(root, target, {
     extensions: engine.fileSystem.SCANNABLE_EXTENSIONS,
     skipDirectories: engine.fileSystem.SKIP_DIRS,

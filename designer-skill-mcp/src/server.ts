@@ -220,9 +220,17 @@ export function createServer(options: ServerOptions = {}): McpServer {
   });
   server.registerPrompt("design", {
     description: "Start a context-first UI task with a compact brief, not an eagerly loaded reference library.",
-    argsSchema: { task: z.string().min(1).max(8_000), aesthetic: z.string().max(200).optional() },
-  }, ({ task, aesthetic }) => ({ messages: [{ role: "user", content: { type: "text", text:
-    `${getPreflightBrief()}\n\n${dispatchIntent(task).text}\n\nTask: ${task}${aesthetic ? `\nRequested aesthetic: ${aesthetic}` : ""}`,
-  } }] }));
+    argsSchema: { task: z.string().trim().min(1).max(8_000), aesthetic: z.string().max(200).optional() },
+  }, ({ task, aesthetic }) => {
+    let routing: string;
+    try { routing = dispatchIntent(task).text; }
+    catch (error) {
+      if (!(error instanceof DesignError)) throw error;
+      routing = `Routing failed (${error.code}): ${error.message}`;
+    }
+    return { messages: [{ role: "user", content: { type: "text", text:
+      `${getPreflightBrief()}\n\n${routing}\n\nTask: ${task}${aesthetic ? `\nRequested aesthetic: ${aesthetic}` : ""}`,
+    } }] };
+  });
   return server;
 }

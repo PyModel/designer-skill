@@ -574,7 +574,7 @@ document.querySelectorAll('a[data-prefetch]').forEach(link => {
 |--------|-------|---------|
 | Instant response | < 100ms | No loading indicator needed |
 | Skeleton threshold | > 300ms | Show skeleton after this delay |
-| Toast error display | >= 5s | Longer than success toasts |
+| Toast error display | Until dismissed | Errors persist (see 17-notifications) |
 | CLS target | < 0.1 | Core Web Vitals "good" |
 | LCP target | < 2.5s | Largest Contentful Paint |
 | INP target | < 200ms | Interaction to Next Paint |

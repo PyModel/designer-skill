@@ -383,6 +383,8 @@ Cancellation: Settings → Click "Cancel" → Confirm → Done (3 steps max)
 
 ## Key Metrics
 
+Targets below are illustrative starting points, not sourced benchmarks; set real targets from your own baseline.
+
 | Metric | Target | Context |
 |--------|--------|---------|
 | Consent rejection rate | Monitor (not minimize) | High rejection is honest UX |

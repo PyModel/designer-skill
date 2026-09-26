@@ -55,7 +55,7 @@ export function resolveCommandVerb(verb: string): { canonical: string; alias?: s
   for (const [canonical, entry] of Object.entries(meta)) {
     if (entry.aliases.includes(key)) return { canonical, alias: key };
   }
-  throw new DesignError("UNKNOWN_COMMAND", `Unknown command "${verb}". Use list_commands or dispatch_intent.`);
+  throw new DesignError("UNKNOWN_COMMAND", `Unknown command "${verb}". Use list_commands, or start a plain request without a leading "/".`);
 }
 
 export function listCommands(): { verb: string; description: string; argumentHint: string }[] {

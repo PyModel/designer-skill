@@ -128,7 +128,11 @@ async function requestJson(path: string, params: Record<string, string | number 
     }
     const body = await readCapped(response);
     if (!body) return { ok: false, message: "Niblet API response exceeded 2 MiB and was discarded." };
-    return { ok: true, data: JSON.parse(new TextDecoder().decode(body)) };
+    const data: unknown = JSON.parse(new TextDecoder().decode(body));
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return { ok: false, message: "Niblet API returned a response that is not a JSON object." };
+    }
+    return { ok: true, data };
   } catch (error) {
     return { ok: false, message: failureMessage(error) };
   }

@@ -22,7 +22,7 @@ Five sizes cover most needs. Pick **one** ratio and commit; the common failure i
 | lg | 1.25-1.5rem | Subheadings, lead |
 | xl+ | 2-4rem | Headlines, hero |
 
-- **Ratios:** 1.25 (major third), 1.333 (perfect fourth), 1.5 (perfect fifth). Keep **≥1.25 between steps**; a flat 1.1× scale reads as uncommitted.
+- **Ratios:** 1.25 (major third), 1.333 (perfect fourth), 1.5 (perfect fifth). Keep **≥1.25 between heading steps**; a flat 1.1× scale reads as uncommitted. Steps near body size (sm → base) may run closer.
 - **Product UI** runs tighter: a **1.125-1.2** ratio on closely-spaced steps, on a fixed `rem` scale (no fluid `clamp()` in dense app UI; users view at consistent DPI, and a heading that shrinks in a sidebar looks worse).
 - **Bolder needs drama:** 3×-5× size jumps, not 1.5×.
 - **Fluid headings** use `clamp(min, preferred, max)`; bound it `max ≤ 2.5 × min`. Cap hero/display at **≤6rem (~96px)**; 8-11rem reads comically loud. Keep body text fixed even on marketing pages.
@@ -51,8 +51,8 @@ Five sizes cover most needs. Pick **one** ratio and commit; the common failure i
 
 Mechanical pass/fail thresholds. Everything above is judgment; these are not.
 
-- **Line-height ≥1.3× on any multi-line text.** 1.5-1.7 stays the body target; below 1.3 fails outright.
-- **Body text never below 12px.** Below 12px is an outright fail; 14px is the minimum for body content, 16px the ideal.
+- **Line-height ≥1.3× on any multi-line body or UI text.** 1.5-1.7 stays the body target; below 1.3 fails outright. Headings keep their 1.1-1.2.
+- **Text never below 12px.** Below 12px is an outright fail; secondary UI text (metadata, captions) stays ≥14px, and body copy is 16px.
 - **Letter-spacing on body caps at +0.05em.** Wider tracking disrupts character groupings; wide tracking is for short uppercase labels only.
 - **Never skip heading levels.** h1 → h3 with no h2 breaks the screen-reader outline.
 - **No `text-align: justify` without `hyphens: auto`.** Unhyphenated justification creates rivers; default body to left-align.
@@ -123,7 +123,7 @@ Dark mode is not inverted light mode. **Never use pure black or pure white**; us
 - **Hero discipline:** headline ≤2 lines, subtext ≤20 words and ≤3-4 lines, CTAs visible without scroll. A 4-line hero headline is a font-size error, not a copy-length one. Cap hero top padding at `pt-24` (~6rem). Max 4 text elements; trust strips, taglines, pricing teasers, and logo walls move below the hero.
 - **Navigation** renders on a single line at desktop (condense or hamburger if it won't fit); cap height at 80px (default 64-72px).
 - **Theme lock:** one theme for the whole page; sections do not invert mid-scroll. Section-level tints within the same family are fine; flipping to a cream section between dark sections is broken. Set the theme once at the page root.
-- **Touch targets** are 44×44px minimum even when the visual element is smaller; expand the hit area with padding or a pseudo-element.
+- **Touch targets** are 44×44px even when the visual element is smaller (WCAG 2.5.5 AAA and platform guidance; the WCAG 2.2 AA floor is 24×24); expand the hit area with padding or a pseudo-element.
 
 ### Optical alignment
 
@@ -175,7 +175,7 @@ Eight-point self-check, one point per failure (**0-1 = low load, 2-3 = moderate,
 The system should read mostly flat. Depth comes from material contrast and hairlines before shadow.
 
 - **Hairline first.** Use a 1px border or a background shift before reaching for a drop shadow. Group with `border-t` or `divide-y` instead of wrapping everything in elevated cards.
-- **Shadow scale:** build a consistent `sm → md → lg → xl` and keep shadows subtle. Use elevation to reinforce hierarchy, not as decoration. All shadows imply a **single light source**; audit for inconsistent direction.
+- **Shadow scale:** build a consistent three-step `sm → md → lg` (matching the 2-3 surface elevation levels) and keep shadows subtle. Use elevation to reinforce hierarchy, not as decoration. All shadows imply a **single light source**; audit for inconsistent direction.
 - **Tint shadows to the background hue.** No pure-black low-opacity shadows on colored or light backgrounds; a black shadow on a colored surface looks muddy and bolted-on.
 - **Radius consistency.** Pick one scale and apply it everywhere: all-sharp (0), all-soft (12-16px), or all-pill (full radius on interactive). Mixed systems are allowed only under a documented rule followed everywhere (e.g. buttons full-pill, cards 16px, inputs 8px). Round buttons in a square layout is broken. When nesting, vary radius optically: tighter on inner elements, softer on outer containers.
 - **Default-lean on roundness: cards top out at 12-16px.** Card, section, or input radii of 24, 28, 32, or 40px read as generated UI; full-pill radius stays at tag/button scale. Soft and high-end consumer systems deliberately override this (the precedence rule applies).

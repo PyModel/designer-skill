@@ -454,6 +454,8 @@ Code query   → Syntax-highlighted block with copy button
 
 ## Key Metrics
 
+Targets below are illustrative starting points, not sourced benchmarks; set real targets from your own baseline.
+
 | Metric | Target | Context |
 |--------|--------|---------|
 | Time to first token | < 1s | Perceived responsiveness |

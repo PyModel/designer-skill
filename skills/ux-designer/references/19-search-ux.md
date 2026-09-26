@@ -425,6 +425,8 @@ AI-powered search:       "How many days do I have to return an item?"
 
 ## Key Metrics
 
+Targets below are illustrative starting points, not sourced benchmarks; set real targets from your own baseline.
+
 | Metric | Target | Context |
 |--------|--------|---------|
 | Search success rate | > 70% | Users who find what they need |

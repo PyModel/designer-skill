@@ -14,14 +14,9 @@ User research is the systematic study of target users to understand their behavi
 - **Increase satisfaction** - Create products people love
 - **Drive conversion** - Remove friction in user journeys
 
-### Key Statistics (2025)
+### Most-used methods
 
-| Method | Popularity |
-|--------|------------|
-| User interviews | 86% |
-| Usability testing | 84% |
-| Surveys | 77% |
-| Concept testing | 64% |
+User interviews, usability testing, surveys and concept testing are the most widely used research methods.
 
 ---
 

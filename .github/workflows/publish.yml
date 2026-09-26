@@ -88,15 +88,18 @@ jobs:
         # Provenance is attached automatically.
         run: |
           published() { npm view "@pymodel/designer-skill-mcp@${TAG#v}" version >/dev/null 2>&1; }
+          # npm processes uploads asynchronously (a publish is visible minutes later),
+          # and the registry job validates against npm, so finish only once it is visible.
+          visible() { for _ in $(seq 60); do published && return 0; sleep 10; done; return 1; }
           if published; then echo "already on npm; skipping"; exit 0; fi
-          if npm publish ./pkg/*.tgz --provenance --access public --ignore-scripts; then exit 0; fi
-          # release.sh PUBLISH_LOCAL=1 may have published it already: npm processes
-          # uploads asynchronously, so wait for the version instead of failing the race.
+          if npm publish ./pkg/*.tgz --provenance --access public --ignore-scripts; then
+            visible && exit 0
+            echo "::error::${TAG#v} was published but did not appear on npm within 10 min"
+            exit 1
+          fi
+          # release.sh PUBLISH_LOCAL=1 may have published it already.
           echo "::warning::CI publish failed; waiting up to 10 min for a local publish"
-          for _ in $(seq 60); do
-            if published; then echo "published locally; skipping"; exit 0; fi
-            sleep 10
-          done
+          if visible; then echo "published locally; skipping"; exit 0; fi
           echo "::error::${TAG#v} is not on npm: configure the trusted publisher or publish with PUBLISH_LOCAL=1"
           exit 1
 

@@ -27,7 +27,7 @@ Use the project's browser or native test harness. Control fixtures, fonts, viewp
 
 ## Accessibility reference points
 
-Normal text generally requires 4.5:1; large text is 18pt regular or 14pt bold, not 18px/14px. The WCAG 2.2 AA target size is 24 CSS pixels with defined exceptions; a 44px project target is a stricter policy. Follow the precise applicable criteria, not a simplified checklist. Automated testing alone does not establish full conformance.
+Normal text generally requires 4.5:1; large text is 18pt regular or 14pt bold, not 18px/14px. The WCAG 2.2 AA target size is 24 CSS pixels with defined exceptions; 44×44 CSS pixels is the AAA level (2.5.5) and the common platform target. Follow the precise applicable criteria, not a simplified checklist. Automated testing alone does not establish full conformance.
 
 ## Reporting
 

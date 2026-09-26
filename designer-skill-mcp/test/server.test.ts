@@ -154,6 +154,13 @@ describe("MCP contract", () => {
     expect(content.type).toBe("text");
     if (content.type === "text") { expect(content.text).toContain("Task: build a pricing page"); expect(content.text.length).toBeLessThan(5000); }
   });
+  it("keeps the design prompt usable when routing rejects the task", async () => {
+    const prompt = await (await connect()).getPrompt({ name: "design", arguments: { task: "/settings page needs spacing fixes" } });
+    const content = prompt.messages[0].content;
+    if (content.type !== "text") throw new Error("expected text");
+    expect(content.text).toContain("Routing failed (UNKNOWN_COMMAND)");
+    expect(content.text).toContain('without a leading "/"');
+  });
   it("retains palette and router discovery", async () => {
     const client = await connect();
     expect(textOf(await client.callTool({ name: "get_palette_seed", arguments: { from: "test-brand" } })).toLowerCase()).toContain("oklch");

@@ -37,7 +37,7 @@ Coined by mobile UX expert Steven Hoober, the Thumb Zone defines how users inter
 
 - Screen sizes exceed 6.5 inches
 - One-handed use dominates
-- Bottom navigation 20-30% faster than top
+- Bottom navigation sits within thumb reach
 - Foldable devices require flexible layouts
 
 ---
@@ -485,7 +485,7 @@ navigator.vibrate([50, 50, 50]);
 
 ## Common Mobile Mistakes
 
-1. **Touch targets too small** - Use 44px minimum
+1. **Touch targets too small** - Use 44×44px (WCAG AA floor is 24×24)
 2. **Important actions at top** - Place in thumb zone
 3. **Too much content** - Prioritize ruthlessly
 4. **Desktop forms on mobile** - Optimize for touch

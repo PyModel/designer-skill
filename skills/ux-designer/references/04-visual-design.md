@@ -127,7 +127,7 @@ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
 ### Size Scale
 
 ```css
-/* Type scale with 1.25 ratio (Major Third) */
+/* Rounded type scale: ~1.15 steps near body size, ~1.25 through headings */
 :root {
   --text-xs: 0.75rem;   /* 12px - Captions */
   --text-sm: 0.875rem;  /* 14px - Small text */
