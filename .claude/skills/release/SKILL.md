@@ -20,7 +20,7 @@ Repo-local maintainer skill; it is not shipped to plugin users.
 `release.sh`:
 1. Preflight: on `main`, clean tree, in sync with `origin/main`, `gh` authenticated, `claude` CLI present, version not already on npm.
 2. `node scripts/versions.mjs sync <version>` writes the version to package.json, the lockfile, server.json, the three plugin manifests, the pinned `mcp.json` and the doc pins (`@pymodel/designer-skill-mcp@x.y.z`), then `versions.mjs check`.
-3. `claude plugin validate --strict`, `npm ci`, build, generated-asset drift check, `checks/core.mjs`, `npm test`, clean-install tarball smoke.
+3. `claude plugin validate --strict`, `npm ci`, build, generated-asset drift check, `checks/core.mjs`, `npm run typecheck`, `npm test`, clean-install tarball smoke.
 4. Commits only the release files, tags `v<version>`, pushes `main` and the tag.
 
 Rerunning after a partial run is safe: an existing tag at HEAD resumes at the push.

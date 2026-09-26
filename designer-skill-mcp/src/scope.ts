@@ -83,6 +83,8 @@ export function readConfinedFile(root: string, path: string, maxBytes: number, c
 
 export interface ScanCoverage {
   enumeration: "git" | "filesystem";
+  /** Why a git work tree fell back to the filesystem walk (set only on that fallback). */
+  gitListingError?: string;
   candidateFiles: number;
   scannedFiles: number;
   ignoredFiles: number;
@@ -175,11 +177,12 @@ export function selectScanFiles(cwd: string, target: string, filters: ScanFilter
   }
 
   const gitListing = listGitFiles(requested);
-  if (gitListing) {
+  if (gitListing && "error" in gitListing) coverage.gitListingError = gitListing.error;
+  if (gitListing && "files" in gitListing) {
     coverage.enumeration = "git";
     const excluded = new Set<string>();
     let considered = 0;
-    for (const listed of gitListing) {
+    for (const listed of gitListing.files) {
       if (listed.endsWith("/")) { // nested repository: not part of this work tree
         excluded.add(toPosix(relative(root, join(requested, listed))));
         continue;
@@ -255,19 +258,29 @@ export function selectScanFiles(cwd: string, target: string, filters: ScanFilter
 
 /**
  * Files git would consider part of the work tree (tracked + untracked, minus
- * .gitignore'd), or null when `dir` is not inside a usable git work tree.
+ * .gitignore'd). Null when git is absent or `dir` is outside a work tree; any
+ * other git failure returns its reason, so the filesystem fallback is reported.
  * Repo config that can execute commands during listing is disabled.
  */
-function listGitFiles(dir: string): string[] | null {
-  const env = { ...process.env };
+function listGitFiles(dir: string): { files: string[] } | { error: string } | null {
+  const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: "C" }; // English stderr, matched below
   for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
   const result = spawnSync("git", [
     "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
     "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ".",
   ], { cwd: dir, env, encoding: "buffer", maxBuffer: 64 * 1024 * 1024, timeout: 15_000, windowsHide: true });
-  if (result.error || result.status !== 0) return null;
+  if (result.error) {
+    if ((result.error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    return { error: `git ls-files failed: ${result.error.message}`.slice(0, 300) };
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr.toString("utf8");
+    if (/not a git repository/i.test(stderr)) return null;
+    const reason = stderr.split("\n").map((line) => line.trim()).find(Boolean) ?? `exit status ${result.status}`;
+    return { error: `git ls-files failed: ${reason}`.slice(0, 300) };
+  }
   const listed = result.stdout.toString("utf8").split("\0").filter(Boolean);
-  return [...new Set(listed)];
+  return { files: [...new Set(listed)] };
 }
 
 export interface IgnoreValueEntry { rule: string; value: string; files?: string[] }
@@ -310,79 +323,79 @@ export function loadDetectorPolicy(root: string, options: PolicyOptions): Detect
     try { raw = JSON.parse(text); }
     catch { throw new DesignError("CONFIG_INVALID", `${label} is not valid JSON.`, { path: label }); }
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new DesignError("CONFIG_INVALID", `${label} must be a JSON object.`, { path: label });
-    // Old builds stored detector filters under hook.*; both sections apply.
-    for (const key of ["hook", "detector"]) {
-      const section = (raw as Record<string, unknown>)[key];
-      if (section === undefined) continue;
-      const where = `${label} ${key}`;
-      if (!section || typeof section !== "object" || Array.isArray(section)) {
-        throw new DesignError("CONFIG_INVALID", `${where} must be an object.`, { path: label });
+    if ("hook" in raw) {
+      throw new DesignError("CONFIG_INVALID", `${label} hook is no longer read; rename it to detector.`, { path: label });
+    }
+    const section = (raw as Record<string, unknown>).detector;
+    if (section === undefined) continue;
+    const where = `${label} detector`;
+    if (!section || typeof section !== "object" || Array.isArray(section)) {
+      throw new DesignError("CONFIG_INVALID", `${where} must be an object.`, { path: label });
+    }
+    const values = section as Record<string, unknown>;
+    for (const field of ["ignoreRules", "ignoreFiles"]) {
+      const list = values[field];
+      if (list !== undefined && (!Array.isArray(list) || list.some((v) => typeof v !== "string" || !v))) {
+        throw new DesignError("CONFIG_INVALID", `${where}.${field} must be an array of nonempty strings.`, { path: label });
       }
-      const values = section as Record<string, unknown>;
-      for (const field of ["ignoreRules", "ignoreFiles"]) {
-        const list = values[field];
-        if (list !== undefined && (!Array.isArray(list) || list.some((v) => typeof v !== "string" || !v))) {
-          throw new DesignError("CONFIG_INVALID", `${where}.${field} must be an array of nonempty strings.`, { path: label });
-        }
-      }
-      for (const rule of (values.ignoreRules as string[] | undefined) ?? []) {
-        if (!options.ruleIds.has(rule)) {
-          throw new DesignError("CONFIG_INVALID",
-            `${where}.ignoreRules has unknown rule "${rule}". Use exact registry ids (lowercase, no padding).`, { path: label, rule });
-        }
-        if (options.protectedRules.has(rule)) {
-          if (local) {
-            throw new DesignError("CONFIG_INVALID",
-              `${label} cannot waive required rule "${rule}": it is per-developer and git-excluded. Waive it in the committed .designer-skill/config.json.`,
-              { path: label, rule });
-          }
-          if (!policy.waivedRules.includes(rule)) policy.waivedRules.push(rule);
-        }
-        if (!policy.ignoreRules.includes(rule)) policy.ignoreRules.push(rule);
-      }
-      // A per-developer file ignore hides every rule, required ones included.
-      if (local && options.protectedRules.size && Array.isArray(values.ignoreFiles) && values.ignoreFiles.length) {
+    }
+    for (const rule of (values.ignoreRules as string[] | undefined) ?? []) {
+      if (!options.ruleIds.has(rule)) {
         throw new DesignError("CONFIG_INVALID",
-          `${where}.ignoreFiles cannot hide files from required rules: it is per-developer and git-excluded. Move it to the committed .designer-skill/config.json.`,
-          { path: label });
+          `${where}.ignoreRules has unknown rule "${rule}". Use exact registry ids (lowercase, no padding).`, { path: label, rule });
       }
-      for (const glob of (values.ignoreFiles as string[] | undefined) ?? []) {
-        try { options.validateGlob(glob); }
-        catch (error) {
-          throw new DesignError("CONFIG_INVALID", `${where}.ignoreFiles glob "${glob}" is invalid: ${(error as Error).message}.`, { path: label });
-        }
-        if (!policy.ignoreFiles.includes(glob)) policy.ignoreFiles.push(glob);
-      }
-      if (values.ignoreValues !== undefined) {
-        if (!Array.isArray(values.ignoreValues)) throw new DesignError("CONFIG_INVALID", `${where}.ignoreValues must be an array.`, { path: label });
-        const entries = options.normalizeIgnoreValues(values.ignoreValues) as IgnoreValueEntry[];
-        const guarded = local ? entries.find((entry) => options.protectedRules.has(entry.rule)) : undefined;
-        if (guarded) {
+      if (options.protectedRules.has(rule)) {
+        if (local) {
           throw new DesignError("CONFIG_INVALID",
-            `${where}.ignoreValues cannot waive values of required rule "${guarded.rule}": it is per-developer and git-excluded. Waive it in the committed .designer-skill/config.json.`,
-            { path: label, rule: guarded.rule });
+            `${label} cannot waive required rule "${rule}": it is per-developer and git-excluded. Waive it in the committed .designer-skill/config.json.`,
+            { path: label, rule });
         }
-        policy.ignoreValues.push(...entries);
+        if (!policy.waivedRules.includes(rule)) policy.waivedRules.push(rule);
       }
-      if (values.designSystem !== undefined) {
-        const design = values.designSystem as Record<string, unknown> | null;
-        if (!design || typeof design !== "object" || Array.isArray(design) ||
-          (design.enabled !== undefined && typeof design.enabled !== "boolean")) {
-          throw new DesignError("CONFIG_INVALID", `${where}.designSystem.enabled must be a boolean.`, { path: label });
-        }
-        if (design.enabled !== undefined) policy.designSystemEnabled = design.enabled as boolean;
+      if (!policy.ignoreRules.includes(rule)) policy.ignoreRules.push(rule);
+    }
+    // A per-developer file ignore hides every rule, required ones included.
+    if (local && options.protectedRules.size && Array.isArray(values.ignoreFiles) && values.ignoreFiles.length) {
+      throw new DesignError("CONFIG_INVALID",
+        `${where}.ignoreFiles cannot hide files from required rules: it is per-developer and git-excluded. Move it to the committed .designer-skill/config.json.`,
+        { path: label });
+    }
+    for (const glob of (values.ignoreFiles as string[] | undefined) ?? []) {
+      try { options.validateGlob(glob); }
+      catch (error) {
+        throw new DesignError("CONFIG_INVALID", `${where}.ignoreFiles glob "${glob}" is invalid: ${(error as Error).message}.`, { path: label });
       }
-      if (values.webRoot !== undefined) {
-        if (typeof values.webRoot !== "string" || !values.webRoot.trim() || isAbsolute(values.webRoot)) {
-          throw new DesignError("CONFIG_INVALID", `${where}.webRoot must be a project-relative directory.`, { path: label });
-        }
-        let webRoot: string;
-        try { webRoot = realpathSync(resolve(root, values.webRoot)); }
-        catch { throw new DesignError("CONFIG_INVALID", `${where}.webRoot ${values.webRoot} does not exist.`, { path: label }); }
-        assertWithin(root, webRoot);
-        if (!statSync(webRoot).isDirectory()) throw new DesignError("CONFIG_INVALID", `${where}.webRoot must be a directory.`, { path: label });
-        policy.webRoot = webRoot;
+      if (!policy.ignoreFiles.includes(glob)) policy.ignoreFiles.push(glob);
+    }
+    if (values.ignoreValues !== undefined) {
+      if (!Array.isArray(values.ignoreValues)) throw new DesignError("CONFIG_INVALID", `${where}.ignoreValues must be an array.`, { path: label });
+      const entries = options.normalizeIgnoreValues(values.ignoreValues) as IgnoreValueEntry[];
+      const guarded = local ? entries.find((entry) => options.protectedRules.has(entry.rule)) : undefined;
+      if (guarded) {
+        throw new DesignError("CONFIG_INVALID",
+          `${where}.ignoreValues cannot waive values of required rule "${guarded.rule}": it is per-developer and git-excluded. Waive it in the committed .designer-skill/config.json.`,
+          { path: label, rule: guarded.rule });
       }
+      policy.ignoreValues.push(...entries);
+    }
+    if (values.designSystem !== undefined) {
+      const design = values.designSystem as Record<string, unknown> | null;
+      if (!design || typeof design !== "object" || Array.isArray(design) ||
+        (design.enabled !== undefined && typeof design.enabled !== "boolean")) {
+        throw new DesignError("CONFIG_INVALID", `${where}.designSystem.enabled must be a boolean.`, { path: label });
+      }
+      if (design.enabled !== undefined) policy.designSystemEnabled = design.enabled as boolean;
+    }
+    if (values.webRoot !== undefined) {
+      if (typeof values.webRoot !== "string" || !values.webRoot.trim() || isAbsolute(values.webRoot)) {
+        throw new DesignError("CONFIG_INVALID", `${where}.webRoot must be a project-relative directory.`, { path: label });
+      }
+      let webRoot: string;
+      try { webRoot = realpathSync(resolve(root, values.webRoot)); }
+      catch { throw new DesignError("CONFIG_INVALID", `${where}.webRoot ${values.webRoot} does not exist.`, { path: label }); }
+      assertWithin(root, webRoot);
+      if (!statSync(webRoot).isDirectory()) throw new DesignError("CONFIG_INVALID", `${where}.webRoot must be a directory.`, { path: label });
+      policy.webRoot = webRoot;
     }
   }
   return policy;

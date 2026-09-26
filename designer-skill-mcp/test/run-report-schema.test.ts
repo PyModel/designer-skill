@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import Ajv2020 from "ajv/dist/2020.js";
+import { Ajv2020 } from "ajv/dist/2020.js";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const schema = JSON.parse(readFileSync(join(repo, "skills/designer-skill/schemas/run-report.schema.json"), "utf8"));

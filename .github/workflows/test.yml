@@ -35,6 +35,7 @@ jobs:
       - name: Build leaves committed assets unchanged
         run: git diff --exit-code -- assets/
       - run: node --test checks/core.mjs
+      - run: npm run typecheck
       - run: npm test
       - name: Clean-install smoke test of the packed tarball
         run: node scripts/smoke-tarball.mjs

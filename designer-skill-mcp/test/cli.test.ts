@@ -1,10 +1,10 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, onTestFinished, vi } from "vitest";
 import { HELP_TEXT, parseCli } from "../src/cli.js";
-import { formatUpdateStatus, isNewer } from "../src/update-check.js";
+import { formatUpdateStatus, isNewer, notifyAvailableUpdate } from "../src/update-check.js";
 
 const run = (...args: string[]) => parseCli(["node", "index.js", ...args]);
 
-afterEach(() => { vi.unstubAllEnvs(); });
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("parseCli", () => {
   it("parses info flags", () => {
@@ -81,6 +81,20 @@ describe("update check", () => {
 
   it("never reports an older registry version as an upgrade", () => {
     expect(formatUpdateStatus({ current: "0.9.0", latest: "0.8.0" })).toBe("0.9.0 (latest)");
+  });
+
+  it("says why an interactive update check failed instead of staying silent", async () => {
+    vi.stubEnv("CI", undefined); vi.stubEnv("NO_UPDATE_NOTIFIER", undefined);
+    const tty = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+    Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+    onTestFinished(() => {
+      if (tty) Object.defineProperty(process.stderr, "isTTY", tty);
+      else Reflect.deleteProperty(process.stderr, "isTTY");
+    });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("getaddrinfo ENOTFOUND registry.npmjs.org")));
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await notifyAvailableUpdate();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("update check failed (getaddrinfo ENOTFOUND registry.npmjs.org)"));
   });
 });
 

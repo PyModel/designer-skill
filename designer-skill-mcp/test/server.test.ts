@@ -15,7 +15,8 @@ async function connect(options: ServerOptions = {}, clientRoots?: string[]) {
   const server = createServer(options);
   const client = new Client({ name: "test-client", version: "0.0.0" }, clientRoots ? { capabilities: { roots: {} } } : {});
   if (clientRoots) {
-    client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots: clientRoots.map((r) => ({ uri: pathToFileURL(r).href })) }));
+    // Paths become file: URIs; anything already carrying a scheme is passed through as-is.
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots: clientRoots.map((r) => ({ uri: /^[a-z]+:/.test(r) ? r : pathToFileURL(r).href })) }));
   }
   cleanup.push(() => server.close(), () => client.close());
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -28,10 +29,11 @@ function workspace() {
   const dir = mkdtempSync(join(tmpdir(), "designer-server-"));
   cleanup.push(() => rmSync(dir, { recursive: true, force: true })); return dir;
 }
-function textOf(result: { content?: unknown }): string {
-  if (!Array.isArray(result.content)) return "";
+function textOf(result: object): string {
+  if (!("content" in result) || !Array.isArray(result.content)) return "";
   return result.content.map((b) => b.type === "text" ? b.text : "").join("\n");
 }
+const resourceText = ([first]: object[]) => ("text" in first ? String(first.text) : "");
 
 describe("intent routing regressions", () => {
   const examples: Array<[string, string]> = [
@@ -145,7 +147,7 @@ describe("MCP contract", () => {
     expect(uris).toContain("designer://skill");
     for (const name of REFERENCE_NAMES) expect(uris).toContain(`designer://reference/${name}`);
     const result = await client.readResource({ uri: "designer://reference/avoid-ai-slop" });
-    expect(result.contents[0].text).toContain("Avoiding AI Slop");
+    expect(resourceText(result.contents)).toContain("Avoiding AI Slop");
     expect((await client.callTool({ name: "get_reference", arguments: { name: "unknown" } })).isError).toBe(true);
   });
   it("exposes a compact design prompt instead of the entire reference library", async () => {
@@ -160,6 +162,19 @@ describe("MCP contract", () => {
     if (content.type !== "text") throw new Error("expected text");
     expect(content.text).toContain("Routing failed (UNKNOWN_COMMAND)");
     expect(content.text).toContain('without a leading "/"');
+  });
+  it("names client roots it cannot use instead of silently dropping them", async () => {
+    const missing = join(workspace(), "moved-away");
+    const result = await (await connect({ useClientRoots: true }, [missing]))
+      .callTool({ name: "load_project_context", arguments: { cwd: workspace() } });
+    expect(result.isError).toBe(true);
+    const uri = pathToFileURL(missing).href;
+    expect(JSON.parse(textOf(result))).toMatchObject({ code: "SCOPE_VIOLATION", message: expect.stringContaining(uri), details: { unusableRoots: [uri] } });
+  });
+  it("reports an invalid client roots list as a scope violation", async () => {
+    const result = await (await connect({ useClientRoots: true }, ["https://example.com/repo"]))
+      .callTool({ name: "load_project_context", arguments: { cwd: workspace() } });
+    expect(JSON.parse(textOf(result))).toMatchObject({ code: "SCOPE_VIOLATION", message: expect.stringContaining("roots could not be listed") });
   });
   it("retains palette and router discovery", async () => {
     const client = await connect();
@@ -179,7 +194,7 @@ describe("ux-designer and niblet catalogue integration", () => {
     const client = await connect();
     const uris = (await client.listResources()).resources.map((r) => r.uri);
     expect(uris).toContain("designer://reference/ux/01-core-principles");
-    for (const uri of uris) expect((await client.readResource({ uri })).contents[0].text).toBeTruthy();
+    for (const uri of uris) expect(resourceText((await client.readResource({ uri })).contents)).toBeTruthy();
   });
   it("degrades niblet catalogue calls to setup guidance without NIBLET_TOKEN", async () => {
     const client = await connect();

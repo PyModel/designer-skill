@@ -38,10 +38,12 @@ export async function printCheckUpdate(): Promise<void> {
   console.log(formatUpdateStatus(await fetchUpdateInfo()));
 }
 
-/** One stderr notice for interactive (terminal) HTTP runs; silent on any failure. */
-export function notifyAvailableUpdate(): void {
-  if (!process.stderr.isTTY || "NO_UPDATE_NOTIFIER" in process.env || process.env.CI) return;
-  fetchUpdateInfo().then((info) => {
+/** One stderr notice for interactive (terminal) HTTP runs: an available update, or why the check failed. */
+export function notifyAvailableUpdate(): Promise<void> {
+  if (!process.stderr.isTTY || "NO_UPDATE_NOTIFIER" in process.env || process.env.CI) return Promise.resolve();
+  return fetchUpdateInfo().then((info) => {
     if (isNewer(info.latest, info.current)) console.error(`designer-skill-mcp ${info.current} → ${info.latest} available. Run: ${UPGRADE_COMMAND}`);
-  }, () => undefined);
+  }, (error: unknown) => {
+    console.error(`designer-skill-mcp: update check failed (${error instanceof Error ? error.message : String(error)}). Set NO_UPDATE_NOTIFIER=1 to skip it.`);
+  });
 }

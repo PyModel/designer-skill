@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -10,7 +10,7 @@ const roots: string[] = [];
 function root(): string {
   const path = mkdtempSync(join(tmpdir(), "designer-gate-")); roots.push(path); return path;
 }
-afterEach(() => { for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }); });
+afterEach(() => { vi.unstubAllEnvs(); for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }); });
 
 function writeConfig(cwd: string, name: string, detector: unknown): void {
   mkdirSync(join(cwd, ".designer-skill"), { recursive: true });
@@ -129,6 +129,27 @@ describe("bundled detector integration", () => {
     expect(report.files.map((f) => f.path)).toEqual(["own.css"]);
   });
 
+  it("names the git failure when a work tree falls back to the filesystem walk", async () => {
+    const fakeGit = (stderr: string) => {
+      const bin = root();
+      writeFileSync(join(bin, "git"), `#!/bin/sh\necho "${stderr}" >&2\nexit 128\n`, { mode: 0o755 });
+      vi.stubEnv("PATH", `${bin}:${process.env.PATH}`);
+    };
+    const cwd = root(); writeFileSync(join(cwd, "page.html"), CLEAN_PAGE);
+    fakeGit("fatal: detected dubious ownership in repository at /repo");
+    const result = await reviewAndGate(".", { cwd });
+    expect(result.coverage).toMatchObject({ enumeration: "filesystem", gitListingError: "git ls-files failed: fatal: detected dubious ownership in repository at /repo" });
+    expect(result.summary).toContain("Git listing failed, so .gitignore was not applied");
+    fakeGit("fatal: not a git repository (or any of the parent directories): .git");
+    expect((await reviewAndGate(".", { cwd })).coverage).not.toHaveProperty("gitListingError");
+  });
+
+  it("rejects the retired hook config section instead of reading it", async () => {
+    const cwd = root(); mkdirSync(join(cwd, ".designer-skill"));
+    writeFileSync(join(cwd, ".designer-skill/config.json"), JSON.stringify({ hook: { ignoreFiles: ["bad.html"] } }));
+    await expect(scanAntipatterns(".", { cwd })).rejects.toMatchObject({ code: "CONFIG_INVALID", message: expect.stringContaining("rename it to detector") });
+  });
+
   it("fails closed on malformed registry metadata", () => {
     expect(() => validateRegistry(undefined)).toThrow(); expect(() => validateRegistry([])).toThrow();
     expect(() => validateRegistry([{ id: "x", category: "slop" }])).toThrow(/Required rule/);
@@ -243,18 +264,18 @@ describe("evaluateGate rule matrix", () => {
   it("unresolved outranks unsupported, and findings outrank both", () => {
     const mixed = (r: string) => r === "low-contrast" ? { status: "UNRESOLVED" as const } : { status: "UNSUPPORTED" as const };
     expect(evaluateGate(report(), registry, mixed).code).toBe("REQUIRED_RULES_UNRESOLVED");
-    const withFinding = report({ findings: [{ file: "a.html", antipattern: "low-contrast", snippet: "", description: "" }] });
+    const withFinding = report({ findings: [{ file: "a.html", antipattern: "low-contrast", name: "", severity: "", snippet: "", description: "" }] });
     expect(evaluateGate(withFinding, registry, mixed).code).toBe("STATIC_FINDINGS");
   });
 
   it("treats project blocking rules as required and advisory findings as warnings", () => {
-    const findings = [{ file: "a.html", antipattern: "side-tab", snippet: "", description: "" }];
+    const findings = [{ file: "a.html", antipattern: "side-tab", name: "", severity: "", snippet: "", description: "" }];
     expect(evaluateGate(report({ findings }), registry, ran)).toMatchObject({ code: "ADDITIONAL_VERIFICATION_REQUIRED", warningCount: 1 });
     expect(evaluateGate(report({ findings }), registry, ran, ["side-tab"])).toMatchObject({ code: "STATIC_FINDINGS", blockingCount: 1 });
   });
 
   it("deduplicates identical findings and rejects unregistered ones", () => {
-    const f = { file: "a.html", line: 3, antipattern: "side-tab", snippet: "s", description: "d" };
+    const f = { file: "a.html", line: 3, antipattern: "side-tab", name: "", severity: "", snippet: "s", description: "d" };
     expect(evaluateGate(report({ findings: [f, { ...f }] }), registry, ran).findingCount).toBe(1);
     expect(() => evaluateGate(report({ findings: [{ ...f, antipattern: "ghost" }] }), registry, ran)).toThrow(/unregistered/);
   });

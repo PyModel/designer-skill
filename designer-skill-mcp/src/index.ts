@@ -28,7 +28,7 @@ async function main(): Promise<void> {
           port: command.port, host: command.host, roots: command.roots, allowedHosts: command.allowedHosts,
           token: process.env.DESIGNER_SKILL_HTTP_TOKEN || undefined,
         });
-        if (command.notifyUpdates) notifyAvailableUpdate();
+        if (command.notifyUpdates) void notifyAvailableUpdate();
       } else {
         await runStdio({ roots: command.roots });
       }

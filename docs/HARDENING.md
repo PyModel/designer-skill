@@ -4,7 +4,7 @@ What the MCP server verifies, what it refuses to claim, and the bounds it runs u
 
 ## Trust boundary
 
-- **Project roots.** Every tool that reads files takes an absolute `cwd`. It must sit inside a root authorized by `--root` (repeatable) or `DESIGNER_SKILL_ROOTS`; with neither, a stdio client's declared MCP roots are used. A cwd outside every authorized root is `SCOPE_VIOLATION`. With no roots at all (a client that declares none and no `--root`), any existing directory is accepted — the host owns authorization.
+- **Project roots.** Every tool that reads files takes an absolute `cwd`. It must sit inside a root authorized by `--root` (repeatable) or `DESIGNER_SKILL_ROOTS`; with neither, a stdio client's declared MCP roots are used. A cwd outside every authorized root is `SCOPE_VIOLATION`; client roots that do not resolve to an existing local path are named in that error (`details.unusableRoots`), and a roots list the client cannot deliver is `SCOPE_VIOLATION` too. With no roots at all (a client that declares none and no `--root`), any existing directory is accepted — the host owns authorization.
 - **HTTP.** Every HTTP bind refuses to start without at least one `--root`, since any local process or OS user can reach even a loopback port. The `Host` header (DNS-rebinding protection) and the bearer token are checked before the JSON body is parsed, and bodies are capped at 100 KB. Loopback binds accept only loopback Host names plus any `--allowed-host`; any other bind address also refuses to start without `DESIGNER_SKILL_HTTP_TOKEN` (clients send `Authorization: Bearer …`, compared in constant time).
 - **Reads.** One reader (`assets/engine/node/scan-fs.mjs`) touches files: realpath inside the project root, `O_NOFOLLOW|O_NONBLOCK`, `fstat` on the open descriptor (FIFOs, devices and sockets are refused before any read), per-file and total byte caps, sha256 of every byte analyzed. Linked stylesheets resolve like a static web server (`?query`/`#fragment` stripped, `/…` against `webRoot`); remote, `//` and non-file hrefs are never fetched.
 - **Isolation.** Detectors run in a worker thread with a deadline (`DESIGNER_SKILL_SCAN_TIMEOUT_MS`, default 60 s) and a 1 GiB heap limit. Exceeding either is `SCAN_LIMIT` naming the file.
@@ -12,7 +12,7 @@ What the MCP server verifies, what it refuses to claim, and the bounds it runs u
 
 ## Scan selection
 
-- In a git work tree, candidates come from `git ls-files --cached --others --exclude-standard` (so `.gitignore` applies), with fsmonitor/untracked-cache disabled and `GIT_*` variables stripped; otherwise a bounded filesystem walk.
+- In a git work tree, candidates come from `git ls-files --cached --others --exclude-standard` (so `.gitignore` applies), with fsmonitor/untracked-cache disabled and `GIT_*` variables stripped; outside a work tree, or without git, a bounded filesystem walk. If git fails inside a work tree (timeout, output cap, `safe.directory` refusal), the walk still runs and `coverage.gitListingError` plus the gate summary state that `.gitignore` was not applied.
 - Dependency, build, VCS, cache and virtualenv directories (`node_modules`, `dist`, `.venv`, `target`, …) are pruned and counted.
 - Symlinks, special files and unreadable entries under a directory target are skipped, counted and named (first 20). An explicitly targeted symlink is `SCOPE_VIOLATION`.
 - Binary files (NUL bytes or >10% undecodable) are unsupported, not "scanned".
@@ -53,7 +53,8 @@ HTML is parsed (htmlparser2 + css-select + css-tree) and styles are computed sta
 `.designer-skill/config.json` (committed) and `config.local.json` (per developer) are validated strictly; any error is `CONFIG_INVALID`, never a silent default.
 
 - `ignoreRules` entries must be exact registry ids (no case variants or padding).
-- A required or blocking rule may be waived **only** in the committed file; a local waiver of one is rejected.
+- Settings live under `detector`. The retired `hook` section is rejected with a rename hint, not read.
+- A required or blocking rule may be waived **only** in the committed file. `config.local.json` cannot waive one through `ignoreRules` or `ignoreValues`, and cannot use `ignoreFiles` at all, since hiding a file hides every rule.
 - `ignoreFiles` globs support `*`, `?`, `**` and `{a,b}` (≤64 alternatives, ≤512 characters). A glob without `/` matches the basename at any depth; a glob ending `/**` prunes the directory. Matching is linear in path and pattern length.
 - `webRoot` must be an existing directory inside the project.
 
@@ -69,7 +70,7 @@ npm test
 node scripts/smoke-tarball.mjs
 ```
 
-Vitest covers the MCP contract through an in-memory client (output schemas enforced, `line ≥ 1`, structured error codes, root confinement, unknown palette seed), the gate rule matrix, config policy, colour parsing, cascade fidelity (`@media`, `@layer`, `var()`), component-syntax image bindings, ScanFS confinement (FIFO, `/dev/zero`, symlinks, byte caps), adversarial-input timing, the worker deadline, and the HTTP transport (Host validation, body cap, bearer token, port in use). `smoke-tarball.mjs` packs the package, installs the tarball with production dependencies only into an empty directory, runs the installed binary over stdio and exercises every tool family, every resource and the static-html gate.
+Vitest covers the MCP contract through an in-memory client (output schemas enforced, `line ≥ 1`, structured error codes, root confinement, unknown palette seed), the gate rule matrix, config policy, colour parsing, cascade fidelity (`@media`, `@layer`, `var()`), component-syntax image bindings, ScanFS confinement (FIFO, `/dev/zero`, symlinks, byte caps), adversarial-input timing, the worker deadline, and the HTTP transport (Host validation, body cap, bearer token, port in use). `npm run typecheck` runs `tsc` over `src` and `test` together. `smoke-tarball.mjs` packs the package, installs the tarball with production dependencies only into an empty directory, runs the installed binary over stdio and exercises every tool family, every resource and the static-html gate.
 
 CI runs Node 22 and 24, fails on generated-asset drift, and requires `versions` (`scripts/versions.mjs check`) and `validate-plugin` through the aggregate `test` check.
 

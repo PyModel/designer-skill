@@ -183,7 +183,7 @@ Plus 26 `ux/*` references in [`skills/ux-designer/`](skills/ux-designer/). Each 
 | `get_preflight_brief` | Scope and verification contract (call first) |
 | `load_project_context` | Read PRODUCT.md / DESIGN.md from the project (absolute `cwd`) |
 | `get_design_system` | SKILL.md router and reference map |
-| `get_reference` | One of 41 references by name (designer or `ux/*`) |
+| `get_reference` | Load one reference by name (designer or `ux/*`) |
 | `anti_slop_checklist` | Advisory style and truthful-content review guidance |
 | `list_commands` | All design verbs with descriptions |
 | `get_command` | Help and reference names for one verb |
@@ -206,7 +206,7 @@ Plus 26 `ux/*` references in [`skills/ux-designer/`](skills/ux-designer/). Each 
 cd designer-skill-mcp
 npm ci
 npm run build   # syncs skills/ → assets/ (generated, gitignored), compiles TypeScript
-npm test        # vitest; `npm run smoke` installs the packed tarball and drives it
+npm run typecheck && npm test   # tsc over src + test, then vitest; `npm run smoke` drives the packed tarball
 ```
 
 **HTTP mode** (Streamable HTTP at `/mcp`):

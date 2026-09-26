@@ -46,7 +46,7 @@ Start with `get_preflight_brief`, then `load_project_context` using the actual *
 
 A direction PASS validates input only; it does not persist approval or prevent writes through other tools. `review_and_gate` (result `schemaVersion: 3`) reports each required rule as `RAN`, `UNSUPPORTED`, `UNRESOLVED` or `WAIVED`, and `staticStatus: PASS | FAIL | INCOMPLETE`; overall `status` and `uiReadiness` are only ever `FAIL | NOT_VERIFIED`. A CSS- or component-only scan cannot evaluate contrast statically, so it is `INCOMPLETE`, not PASS. Rendered, functional and accessibility checks need separate evidence.
 
-Style rules are advisory unless adopted through `blockingRules`. Required rules can be waived only in the committed `.designer-skill/config.json`. Empty, ignored-only or fully waived scans, invalid configuration and unsupported scope never become success. Semantics and bounds: [HARDENING.md](../docs/HARDENING.md).
+Style rules are advisory unless adopted through `blockingRules`. Required rules can be waived only in the committed `.designer-skill/config.json`; the per-developer `config.local.json` cannot waive them and cannot use `ignoreFiles`. Empty, ignored-only or fully waived scans, invalid configuration and unsupported scope never become success. Semantics and bounds: [HARDENING.md](../docs/HARDENING.md).
 
 ## HTTP transport
 
@@ -65,6 +65,7 @@ Run from this directory. CI exercises Node 22 and 24 with the committed lockfile
 npm ci
 npm run build
 node --test checks/core.mjs
+npm run typecheck
 npm test
 node scripts/smoke-tarball.mjs
 node dist/index.js --help

@@ -46,6 +46,7 @@ jobs:
           npm run build
           git diff --exit-code -- assets/
           node --test checks/core.mjs
+          npm run typecheck
           npm test
           node scripts/smoke-tarball.mjs
 

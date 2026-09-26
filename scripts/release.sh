@@ -59,6 +59,7 @@ publish_local() {
       npm run build &&
       git diff --exit-code -- assets/ &&
       node --test checks/core.mjs &&
+      npm run typecheck &&
       npm test &&
       node scripts/smoke-tarball.mjs &&
       npm publish --access public --ignore-scripts
@@ -108,6 +109,7 @@ claude plugin validate --strict "$ROOT"
   npm run build
   git -C "$ROOT" diff --exit-code -- designer-skill-mcp/assets/ || die "generated assets drifted from skills/; commit the sync first"
   node --test checks/core.mjs
+  npm run typecheck
   npm test
   node scripts/smoke-tarball.mjs
 )

@@ -122,6 +122,7 @@ export function evaluateGate(report: DetectionReport, registry: unknown, coverag
     `Static check: ${staticStatus} (${code}). UI readiness: ${status}.`,
     `Scanned ${report.coverage.scannedFiles} of ${report.coverage.candidateFiles} candidate files (${report.coverage.enumeration} listing); ` +
       `ignored ${report.coverage.ignoredFiles}; skipped ${skipped} symlink/special/unreadable entries.`,
+    report.coverage.gitListingError ? `Git listing failed, so .gitignore was not applied: ${report.coverage.gitListingError}` : "",
     !scanned ? "No applicable files were scanned. Correct the target or document non-applicability."
       : allWaived ? "Every required rule is waived, so nothing was verified." : "",
     `${blockingCount} blocking and ${findings.length - blockingCount} advisory findings.`,
