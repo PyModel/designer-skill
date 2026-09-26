@@ -97,8 +97,8 @@ More color ≠ better. Strategic color beats rainbow vomit. Use OKLCH, not HSL: 
 | Content | AA minimum | AAA target |
 |---------|-----------|------------|
 | Body text | 4.5:1 | 7:1 |
-| Large text (≥18px, or ≥14px at weight ≥700) | 3:1 | 4.5:1 |
-| UI components, icons | 3:1 | 4.5:1 |
+| Large text (≥18pt ≈ 24px, or ≥14pt ≈ 18.66px at weight ≥700) | 3:1 | 4.5:1 |
+| UI components, icons | 3:1 | — (1.4.11 has no AAA level) |
 | Placeholder text | 4.5:1 | — |
 
 The single biggest reason AI designs feel hard to read: muted gray body text on a tinted near-white "for elegance." When close, bump the body color toward the ink end of the ramp. Dangerous combos that commonly fail: light gray on white (the #1 fail), red on green (8% of men can't distinguish), yellow on white, thin light text on images. Don't trust your eyes; test with a contrast checker. Never rely on color alone to convey information.

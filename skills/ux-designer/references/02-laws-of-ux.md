@@ -68,7 +68,7 @@ Avoid:
 ```
 
 ### The Magic Number
-Navigation menus should typically have **7±2 items** at the top level, though research suggests **4-5 items** may be optimal for quick scanning.
+Keep top-level navigation to roughly **4–7 items**. Miller's 7±2 describes working-memory recall; menus are scanned and recognized, so it is not a menu limit.
 
 ---
 

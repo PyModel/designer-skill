@@ -11,7 +11,7 @@
 [![skills.sh](https://skills.sh/b/pymodel/designer-skill)](https://skills.sh/pymodel/designer-skill)
 <br />
 [![tools](https://img.shields.io/badge/MCP_tools-14-0ea5e9?style=flat-square)](#tools)
-[![references](https://img.shields.io/badge/references-41-e11d48?style=flat-square)](#references)
+[![references](https://img.shields.io/badge/references-42-e11d48?style=flat-square)](#references)
 [![detector](https://img.shields.io/badge/detector-44_rules-f59e0b?style=flat-square)](#tools)
 [![node](https://img.shields.io/badge/node-%E2%89%A522-10b981?style=flat-square)](designer-skill-mcp/package.json)
 [![api key](https://img.shields.io/badge/API_key-none-7c3aed?style=flat-square)](#setup)
@@ -125,7 +125,7 @@ flowchart LR
 
 | 🔵 Route | 🟣 Know | 🟢 Check |
 |---|---|---|
-| `dispatch_intent` maps "make it pop" or "it feels off" to design verbs and at most four references. | 15 designer references (type, color, motion, a11y, anti-slop, redesign) plus 26 `ux/*` references (forms, collaboration, canvas, AI, i18n…). | A 44-rule deterministic detector backs `review_and_gate`, which reports each required rule as ran, unsupported, unresolved or waived. |
+| `dispatch_intent` maps "make it pop" or "it feels off" to design verbs and at most four references. | 16 designer references (type, color, motion, a11y, anti-slop, redesign) plus 26 `ux/*` references (forms, collaboration, canvas, AI, i18n…). | A 44-rule deterministic detector backs `review_and_gate`, which reports each required rule as ran, unsupported, unresolved or waived. |
 
 The gate is static only: overall status is `FAIL` or `NOT_VERIFIED`, never a rendered-readiness pass. Rendered, accessibility and performance checks stay `NOT_RUN` until the host supplies evidence.
 
@@ -153,6 +153,7 @@ The gate is static only: overall status is `FAIL` or `NOT_VERIFIED`, never a ren
 | `avoid-ai-slop` | Ban list, category-reflex checks, completeness contract | 🔵 core |
 | `refactor-and-redesign` | Audit → diagnose → redesign without breaking behavior | 🔵 core |
 | `command-playbook` | Intent → verb dispatch | 🔵 core |
+| `verification-and-recovery` | Evidence rules, gate statuses, failure triage | 🔵 core |
 | `interaction-design` | Fitts/Hick/Miller, forms, navigation, errors, loading | 🔴 extended |
 | `visual-critique` | Seven-dimension critique | 🔴 extended |
 | `design-systems` | Token architecture, component specs, theming | 🔴 extended |
@@ -161,7 +162,7 @@ The gate is static only: overall status is `FAIL` or `NOT_VERIFIED`, never a ren
 | `live-mode` | Browser variant mode: select, HMR, steer, accept | 🔴 extended |
 | `css-techniques` | Modern CSS: container queries, `:has()`, `clamp()`, logical props | 🔴 extended |
 
-Plus 26 `ux/*` references in [`skills/ux-designer/`](skills/ux-designer/).
+Plus 26 `ux/*` references in [`skills/ux-designer/`](skills/ux-designer/). Each `SKILL.md` is a short router with a one-line description; references load only when a task needs them.
 
 | Phrase | Verbs | Reads |
 |---|---|---|
@@ -204,7 +205,7 @@ Plus 26 `ux/*` references in [`skills/ux-designer/`](skills/ux-designer/).
 ```bash
 cd designer-skill-mcp
 npm ci
-npm run build   # syncs skills/ → assets/, compiles TypeScript
+npm run build   # syncs skills/ → assets/ (generated, gitignored), compiles TypeScript
 npm test        # vitest; `npm run smoke` installs the packed tarball and drives it
 ```
 

@@ -89,7 +89,7 @@ Timing matters more than easing for "feels right." Match duration to interaction
 
 The 100/300/500 rule: **100–150ms** instant feedback, **200–300ms** state changes, **300–500ms** layout changes, **500–800ms** entrances.
 
-**Hard rule: keep UI animations under 300ms.** A 180ms dropdown feels more responsive than a 400ms one. **Never use durations over 500ms for feedback** — it feels laggy.
+**Hard rule: keep feedback and state-change animations under 300ms;** only layout changes and entrances run longer. A 180ms dropdown feels more responsive than a 400ms one. **Never use durations over 500ms for feedback** — it feels laggy.
 
 **Exit ≈ 75% of enter duration.** Faster exits keep dismissal feeling responsive. More broadly, use **asymmetric timing**: slow where the user decides, fast where the system responds (hold-to-delete press 2s linear, release 200ms ease-out).
 

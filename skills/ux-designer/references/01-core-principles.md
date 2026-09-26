@@ -233,9 +233,58 @@ Empty space is a design element, not wasted space.
 
 ---
 
+## Anti-Pattern Index
+
+1. **Dark patterns** - Deceptive UI that tricks users → see [15-ethical-design.md](15-ethical-design.md)
+2. **Infinite scroll without context** - No sense of progress → see [21-data-tables.md](21-data-tables.md)
+3. **Hidden navigation** - Hamburger menus on desktop → see [05-information-architecture.md](05-information-architecture.md)
+4. **Autoplaying media** - Unexpected sound/video → see [03-accessibility.md](03-accessibility.md)
+5. **Disabled buttons without explanation** - Confusing blocked states → see [06-interaction-design.md](06-interaction-design.md)
+6. **Walls of text** - No visual hierarchy or chunking → see [04-visual-design.md](04-visual-design.md)
+7. **Color-only feedback** - Excludes colorblind users → see [03-accessibility.md](03-accessibility.md)
+8. **Tiny touch targets** - Frustrating on mobile → see [08-mobile-ux.md](08-mobile-ux.md)
+9. **No loading states** - Users think system is broken → see [22-performance-ux.md](22-performance-ux.md)
+10. **Popup/modal overuse** - Interrupts user flow → see [06-interaction-design.md](06-interaction-design.md)
+11. **No presence indicators** - Users don't know who else is working → see [12a-presence-awareness.md](12a-presence-awareness.md)
+12. **Silent sync failures** - Data loss without warning → see [12b-conflict-resolution-sync.md](12b-conflict-resolution-sync.md)
+13. **Cursor overload** - Too many live cursors create visual noise → see [12a-presence-awareness.md](12a-presence-awareness.md)
+14. **Screen-center zoom** - Disorienting; zoom at cursor instead → see [13a-canvas-navigation.md](13a-canvas-navigation.md)
+15. **No offline indication** - Users think they're connected when not → see [12b-conflict-resolution-sync.md](12b-conflict-resolution-sync.md)
+16. **Hidden AI** - Users should always know when interacting with AI → see [14-ai-ux-patterns.md](14-ai-ux-patterns.md)
+17. **Over-automation** - AI changes applied without user awareness or consent → see [14-ai-ux-patterns.md](14-ai-ux-patterns.md)
+18. **No AI undo** - AI-applied changes must be reversible → see [14-ai-ux-patterns.md](14-ai-ux-patterns.md)
+19. **Confirmshaming** - Guilt-laden language on decline buttons → see [15-ethical-design.md](15-ethical-design.md)
+20. **Asymmetric consent** - Big "Accept" button, tiny "Reject" link → see [15-ethical-design.md](15-ethical-design.md)
+21. **Mandatory lengthy tours** - Forcing users through 10+ onboarding steps → see [16-onboarding.md](16-onboarding.md)
+22. **Notification carpet bombing** - Every event as a push notification → see [17-notifications.md](17-notifications.md)
+23. **Permission on first visit** - Asking for push permission before user sees value → see [17-notifications.md](17-notifications.md)
+24. **Hardcoded/untranslatable strings** - Text baked into code/images, fixed-width containers, LTR-only layout → see [23-internationalization.md](23-internationalization.md)
+25. **Voice-only flows / hidden mic** - No fallback modality, no recognition feedback, buried voice entry → see [24-voice-and-multimodal.md](24-voice-and-multimodal.md)
+
 ## Sources
 
 - Nielsen, J. (1994, 2020). "10 Usability Heuristics for User Interface Design"
 - Norman, D. (2013). "The Design of Everyday Things"
 - Krug, S. (2014). "Don't Make Me Think, Revisited"
 - Nielsen Norman Group research articles
+- [Laws of UX](https://lawsofux.com/) - Jon Yablonski
+- [Nielsen Norman Group](https://www.nngroup.com/) - Usability research
+- [WCAG 2.2](https://www.w3.org/TR/WCAG22/) - Accessibility guidelines
+- [Material Design](https://m3.material.io/) - Google's design system
+- [Human Interface Guidelines](https://developer.apple.com/design/) - Apple
+- [Interaction Design Foundation](https://www.interaction-design.org/)
+- [Liveblocks](https://liveblocks.io/) - Real-time collaboration patterns
+- [Figma Engineering Blog](https://www.figma.com/blog/category/engineering/) - Multiplayer & canvas
+- [Ably](https://ably.com/blog/collaborative-ux-best-practices) - Collaborative UX
+- [Google PAIR Guidebook](https://pair.withgoogle.com/guidebook) - AI design patterns
+- [Microsoft HAX Toolkit](https://www.microsoft.com/en-us/haxtoolkit/) - Human-AI interaction
+- [Deceptive Design](https://www.deceptive.design/) - Dark pattern catalog
+- [EU Digital Services Act](https://digital-strategy.ec.europa.eu/en/policies/digital-services-act-package) - Platform regulation
+- [EU Accessibility Act](https://ec.europa.eu/social/main.jsp?catId=1202) - EN 301 549 / WCAG 2.1 AA mandate
+- [W3C Internationalization (i18n) Activity](https://www.w3.org/International/) - i18n/l10n standards
+- [Baymard Institute](https://baymard.com/) - E-commerce UX research
+- [Edward Tufte](https://www.edwardtufte.com/) - Data visualization
+- [ColorBrewer](https://colorbrewer2.org/) - Colorblind-safe palettes
+- [The A11y Project](https://www.a11yproject.com/) - Accessibility community resource
+- [web.dev](https://web.dev/) - Core Web Vitals and performance UX
+- [Smashing Magazine](https://www.smashingmagazine.com/) - Practical UX/UI patterns

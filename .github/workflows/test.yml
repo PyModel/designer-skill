@@ -32,7 +32,7 @@ jobs:
           cache-dependency-path: designer-skill-mcp/package-lock.json
       - run: npm ci
       - run: npm run build
-      - name: Committed generated assets match the canonical skill source
+      - name: Build leaves committed assets unchanged
         run: git diff --exit-code -- assets/
       - run: node --test checks/core.mjs
       - run: npm test

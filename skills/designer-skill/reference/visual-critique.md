@@ -81,7 +81,7 @@ A dimensional critique instrument. Score a screen across seven dimensions, each 
 ## 3. Color
 
 **Contrast:**
-- Body text meets WCAG AA (4.5:1)? Large text (18px+ regular, 14px+ bold) meets 3:1?
+- Body text meets WCAG AA (4.5:1)? Large text (18pt ≈ 24px regular, 14pt ≈ 18.66px bold) meets 3:1?
 - Interactive components (buttons, inputs, focus rings) meet 3:1 against adjacent surfaces?
 - Placeholder text and disabled states failing contrast in ways that impede use?
 - Flag every failing pair with its measured ratio and the minimum required.

@@ -1,6 +1,7 @@
 ---
 name: release
-description: Release designer-skill-mcp (maintainers only). Use when asked to ship, publish, cut a release, bump the version or push a release tag for designer-skill-mcp.
+description: Cut and publish a designer-skill-mcp release (maintainers only).
+disable-model-invocation: true
 ---
 
 # release

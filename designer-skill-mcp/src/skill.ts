@@ -8,6 +8,7 @@ export const REFERENCE_NAMES = [
   "design-principles", "aesthetic-systems", "motion-and-interaction", "engineering-and-performance",
   "avoid-ai-slop", "differentiation-playbook", "refactor-and-redesign", "command-playbook",
   "interaction-design", "visual-critique", "design-systems", "project-init", "craft-flow", "live-mode", "css-techniques",
+  "verification-and-recovery",
 ] as const;
 export type ReferenceName = (typeof REFERENCE_NAMES)[number];
 export const REFERENCE_DESCRIPTIONS: Record<ReferenceName, string> = {
@@ -26,6 +27,7 @@ export const REFERENCE_DESCRIPTIONS: Record<ReferenceName, string> = {
   "craft-flow": "Scope-adaptive implementation and verification workflow.",
   "live-mode": "Authorized browser preview and variant iteration.",
   "css-techniques": "Supported CSS implementation patterns.",
+  "verification-and-recovery": "Evidence rules, gate statuses, rendered checks and failure triage.",
 };
 
 // ux-designer reference files, namespaced under "ux/". Files live in the

@@ -1,11 +1,5 @@
 [scanner]
-# main-s/ is a separate browser-extension + website project bundled in this
-# repo. It legitimately uses chrome.devtools.inspectedWindow.eval() (browser
-# devtools API), shell scripts for build tooling, and test stubs with fake
-# API key strings — none of these are actual security issues for the
-# designer-skill Codex plugin itself.
+# docs/blog holds prose drafts, not plugin code.
 ignore_paths = [
-  "main-s/*",
   "docs/blog/*",
-  "docs/superpowers/*",
 ]

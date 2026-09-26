@@ -284,6 +284,26 @@ Indeterminate (unknown duration):
 
 ---
 
+## Choosing a Container: Modal, Side Panel or Full Page
+
+```
+What is the user doing?
+├── Quick confirmation or simple input (1-3 fields)?
+│   └── → Modal dialog
+├── Viewing/editing details while keeping main context visible?
+│   ├── Content is narrow (form, properties, chat)?
+│   │   └── → Side panel
+│   └── Content needs significant width?
+│       └── → Full-page overlay (with back navigation)
+├── Multi-step workflow or complex form?
+│   ├── Steps are short (2-3 fields each)?
+│   │   └── → Modal with stepper
+│   └── Steps are long or need reference to other content?
+│       └── → Full page with stepper
+└── Creating a new complex entity (document, project)?
+    └── → Full page (dedicated creation flow)
+```
+
 ## Transitions
 
 ### Page Transitions

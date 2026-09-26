@@ -577,7 +577,6 @@ document.querySelectorAll('a[data-prefetch]').forEach(link => {
 | Toast error display | >= 5s | Longer than success toasts |
 | CLS target | < 0.1 | Core Web Vitals "good" |
 | LCP target | < 2.5s | Largest Contentful Paint |
-| FID target | < 100ms | First Input Delay |
 | INP target | < 200ms | Interaction to Next Paint |
 | Optimistic rollback | < 5s | Show error if no confirmation |
 | Prefetch hover delay | 65ms | Wait before prefetching |
