@@ -77,7 +77,7 @@ The canonical skill is `skills/designer-skill/`. Build copies its router, refere
 
 ## Version and updates
 
-The server does not auto-install updates. An interactive HTTP run may print one update notice on stderr; stdio runs never check.
+The server does not auto-install updates. An interactive HTTP run may print one stderr line: an available update, or why the check failed. Stdio runs never check.
 
 ```sh
 designer-skill-mcp --version
