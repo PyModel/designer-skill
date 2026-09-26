@@ -47,18 +47,33 @@ function apiOrigin(): { ok: true; origin: string } | { ok: false; message: strin
   return { ok: true, origin: url.origin };
 }
 
-function token(): string | null {
-  return process.env.NIBLET_TOKEN?.trim() || null;
+const KEY_PREFIX = "niblet_at_";
+
+/** The account key, or the guidance to show instead. A value that is not a Niblet key is never
+ *  sent: the API can only refuse it, and each refusal lands in niblet's operator telemetry. */
+function credential(): { ok: true; key: string } | { ok: false; text: string } {
+  const raw = process.env.NIBLET_TOKEN?.trim();
+  if (!raw) return { ok: false, text: notConfiguredText() };
+  if (!raw.startsWith(KEY_PREFIX)) return { ok: false, text: notAKeyText() };
+  return { ok: true, key: raw };
 }
 
 export function nibletConfigured(): boolean {
-  return token() !== null;
+  return credential().ok;
 }
 
 function notConfiguredText(): string {
   return [
     "Niblet catalogue not configured — no references were fetched.",
     "To enable: create a key at https://www.niblet.com/account, set it as NIBLET_TOKEN in this MCP server's environment, and restart the server.",
+    "Until then, continue with the bundled reference files (get_reference); catalogue retrieval is optional.",
+  ].join("\n");
+}
+
+function notAKeyText(): string {
+  return [
+    `NIBLET_TOKEN is set but is not a Niblet account key (keys start with ${KEY_PREFIX}) — no request was sent.`,
+    "To fix: copy the whole key from https://www.niblet.com/account into NIBLET_TOKEN in this MCP server's environment, and restart the server.",
     "Until then, continue with the bundled reference files (get_reference); catalogue retrieval is optional.",
   ].join("\n");
 }
@@ -97,7 +112,7 @@ function failureMessage(error: unknown): string {
   return `Niblet API could not be reached${cause ? ` (${cause})` : ""}. No retry was attempted.`;
 }
 
-async function requestJson(path: string, params: Record<string, string | number | undefined>): Promise<{ ok: true; data: unknown } | { ok: false; message: string }> {
+async function requestJson(path: string, key: string, params: Record<string, string | number | undefined>): Promise<{ ok: true; data: unknown } | { ok: false; message: string }> {
   const origin = apiOrigin();
   if (!origin.ok) return origin;
   const url = new URL(path, origin.origin);
@@ -107,7 +122,7 @@ async function requestJson(path: string, params: Record<string, string | number 
   try {
     const response = await fetch(url, {
       method: "GET",
-      headers: { Accept: "application/json", Authorization: `Bearer ${token()}` },
+      headers: { Accept: "application/json", Authorization: `Bearer ${key}` },
       credentials: "omit",
       redirect: "manual",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -178,9 +193,10 @@ export async function findUiReferences(
   query: string,
   options: { platform?: "web" | "ios"; limit?: number } = {},
 ): Promise<CatalogueAnswer> {
-  if (!nibletConfigured()) return { configured: false, text: notConfiguredText() };
+  const credentials = credential();
+  if (!credentials.ok) return { configured: false, text: credentials.text };
   const limit = Math.min(Math.max(options.limit ?? 2, 1), 3);
-  const result = await requestJson("/v1/search", { q: query, platform: options.platform, limit, client: CLIENT });
+  const result = await requestJson("/v1/search", credentials.key, { q: query, platform: options.platform, limit, client: CLIENT });
   if (!result.ok) return { configured: true, text: `${result.message}\nContinue with the bundled reference files (get_reference).` };
   const data = result.data as { results?: unknown[] };
   const refs = (Array.isArray(data.results) ? data.results : []).map(parseReference).filter((r): r is UiReference => r !== null).slice(0, limit);
@@ -198,8 +214,9 @@ export async function findUiReferences(
 export async function getDesignReference(
   options: { screenId?: string; packSlug?: string; sections?: string[] } = {},
 ): Promise<CatalogueAnswer> {
-  if (!nibletConfigured()) return { configured: false, text: notConfiguredText() };
-  const result = await requestJson("/v1/design-reference", {
+  const credentials = credential();
+  if (!credentials.ok) return { configured: false, text: credentials.text };
+  const result = await requestJson("/v1/design-reference", credentials.key, {
     screenId: options.screenId,
     packSlug: options.packSlug,
     sections: options.sections?.length ? options.sections.join(",") : undefined,

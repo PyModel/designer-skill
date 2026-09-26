@@ -7,12 +7,15 @@ import { findUiReferences, getDesignReference, nibletConfigured } from "../src/n
 
 let stub: Server | null = null;
 let origin = "";
+/** Every path the stub was asked for, so a test can prove a request was never sent. */
+const requests: string[] = [];
 const savedToken = process.env.NIBLET_TOKEN;
 const savedOrigin = process.env.NIBLET_API_ORIGIN;
 
 function startStub(): Promise<void> {
   stub = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    requests.push(url.pathname);
     if (url.searchParams.get("q") === "null-body" || url.searchParams.get("screenId") === "scr-null") {
       res.setHeader("content-type", "application/json");
       res.end("null");
@@ -79,6 +82,21 @@ describe("niblet adapter — unconfigured", () => {
 
 describe("niblet adapter — REST path against local stub", () => {
   beforeAll(startStub);
+
+  it("never sends a NIBLET_TOKEN that is not a Niblet key", async () => {
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    for (const value of ["sk-live-123", "YOUR_NIBLET_KEY", "${NIBLET_TOKEN}"]) {
+      process.env.NIBLET_TOKEN = value;
+      expect(nibletConfigured()).toBe(false);
+      for (const answer of [await findUiReferences("pricing page"), await getDesignReference({ screenId: "scr-001" })]) {
+        expect(answer.configured).toBe(false);
+        expect(answer.text).toContain("not a Niblet account key");
+        expect(answer.text).not.toContain(value);
+      }
+    }
+    expect(requests).toEqual([]);
+  });
 
   it("finds references and points at get_design_reference for web screens", async () => {
     process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
