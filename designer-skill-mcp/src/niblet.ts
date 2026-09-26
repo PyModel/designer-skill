@@ -22,6 +22,10 @@ export interface UiReference {
   inspectUrl: string;
 }
 
+/** The sections niblet's /v1/design-reference accepts. */
+export const DESIGN_REFERENCE_SECTIONS = ["overview", "colors", "typography", "components", "provenance"] as const;
+export type DesignReferenceSection = (typeof DESIGN_REFERENCE_SECTIONS)[number];
+
 export interface CatalogueAnswer {
   configured: boolean;
   text: string;
@@ -138,7 +142,9 @@ async function requestJson(path: string, key: string, params: Record<string, str
         message:
           response.status === 401 || response.status === 403
             ? "Niblet API rejected the NIBLET_TOKEN key. Create a fresh niblet_at_ key at https://www.niblet.com/account and restart the server."
-            : `Niblet API request failed (HTTP ${response.status}). No retry was attempted.`,
+            : response.status === 404 && path === "/v1/design-reference"
+              ? "Niblet has no design reference for that screen or pack."
+              : `Niblet API request failed (HTTP ${response.status}). No retry was attempted.`,
       };
     }
     const body = await readCapped(response);
@@ -212,14 +218,18 @@ export async function findUiReferences(
 
 /** Read the recorded style reference (colors, typography, components) for a web screen or pack. */
 export async function getDesignReference(
-  options: { screenId?: string; packSlug?: string; sections?: string[] } = {},
+  options: { screenId?: string; packSlug?: string; sections?: DesignReferenceSection[] } = {},
 ): Promise<CatalogueAnswer> {
   const credentials = credential();
   if (!credentials.ok) return { configured: false, text: credentials.text };
+  if (!options.screenId && !options.packSlug) {
+    return { configured: true, text: "Pass a screenId from find_ui_references or a packSlug — no request was sent." };
+  }
+  // The API names the pack `slug` and rejects a section listed twice.
   const result = await requestJson("/v1/design-reference", credentials.key, {
     screenId: options.screenId,
-    packSlug: options.packSlug,
-    sections: options.sections?.length ? options.sections.join(",") : undefined,
+    slug: options.packSlug,
+    sections: options.sections?.length ? [...new Set(options.sections)].join(",") : undefined,
     client: CLIENT,
   });
   if (!result.ok) return { configured: true, text: `${result.message}\nContinue with the bundled reference files (get_reference).` };

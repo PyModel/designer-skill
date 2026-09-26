@@ -7,7 +7,7 @@ import { findUiReferences, getDesignReference, nibletConfigured } from "../src/n
 
 let stub: Server | null = null;
 let origin = "";
-/** Every path the stub was asked for, so a test can prove a request was never sent. */
+/** Every path and query the stub was asked for, so a test can prove what was (never) sent. */
 const requests: string[] = [];
 const savedToken = process.env.NIBLET_TOKEN;
 const savedOrigin = process.env.NIBLET_API_ORIGIN;
@@ -15,10 +15,15 @@ const savedOrigin = process.env.NIBLET_API_ORIGIN;
 function startStub(): Promise<void> {
   stub = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    requests.push(url.pathname);
+    requests.push(url.pathname + url.search);
     if (url.searchParams.get("q") === "null-body" || url.searchParams.get("screenId") === "scr-null") {
       res.setHeader("content-type", "application/json");
       res.end("null");
+      return;
+    }
+    if (url.pathname === "/v1/search" && url.searchParams.get("q") === "not-found") {
+      res.statusCode = 404;
+      res.end("{}");
       return;
     }
     if (url.pathname === "/v1/search") {
@@ -40,6 +45,11 @@ function startStub(): Promise<void> {
           ],
         }),
       );
+      return;
+    }
+    if (url.pathname === "/v1/design-reference" && url.searchParams.get("screenId") === "scr-none") {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: "No style reference for that screen or slug." }));
       return;
     }
     if (url.pathname === "/v1/design-reference") {
@@ -114,6 +124,44 @@ describe("niblet adapter — REST path against local stub", () => {
     const answer = await getDesignReference({ screenId: "scr-001", sections: ["colors"] });
     expect(answer.configured).toBe(true);
     expect(answer.text).toContain("Acme Settings reference");
+  });
+
+  it("asks for a pack by the API's slug parameter, each section once", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    const answer = await getDesignReference({ packSlug: "acme", sections: ["colors", "colors", "typography"] });
+    expect(answer.text).toContain("Acme Settings reference");
+    const sent = new URL(requests[0], origin);
+    expect(sent.pathname).toBe("/v1/design-reference");
+    expect(sent.searchParams.get("slug")).toBe("acme");
+    expect(sent.searchParams.has("packSlug")).toBe(false);
+    expect(sent.searchParams.get("sections")).toBe("colors,typography");
+  });
+
+  it("sends nothing without a screenId or packSlug", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    const answer = await getDesignReference({});
+    expect(answer.text).toContain("no request was sent");
+    expect(requests).toEqual([]);
+  });
+
+  it("says a screen has no reference when the API answers 404", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    const answer = await getDesignReference({ screenId: "scr-none" });
+    expect(answer.configured).toBe(true);
+    expect(answer.text).toContain("no design reference for that screen or pack");
+  });
+
+  it("reports a 404 from search as a failed request, not a missing reference", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    const answer = await findUiReferences("not-found");
+    expect(answer.text).toContain("HTTP 404");
+    expect(answer.text).not.toContain("design reference for that screen");
   });
 
   it("neutralizes every variant of the untrusted boundary tag inside remote markdown", async () => {

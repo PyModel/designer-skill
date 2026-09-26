@@ -83,6 +83,16 @@ describe("MCP contract", () => {
     expect(textOf(await client.callTool({ name: "get_command", arguments: { verb: "init" } }))).toContain("alias");
     expect((await client.callTool({ name: "get_command", arguments: { verb: "unknown" } })).isError).toBe(true);
   });
+  it("takes get_design_reference arguments in niblet's shape: screenId or packSlug, known sections", async () => {
+    const saved = process.env.NIBLET_TOKEN;
+    delete process.env.NIBLET_TOKEN; // guidance path: nothing leaves the process
+    cleanup.push(() => { if (saved !== undefined) process.env.NIBLET_TOKEN = saved; });
+    const client = await connect();
+    const call = (args: Record<string, unknown>) => client.callTool({ name: "get_design_reference", arguments: args });
+    expect((await call({ packSlug: "acme" })).isError).not.toBe(true);
+    expect((await call({ screenId: "x", sections: ["colors", "provenance"] })).isError).not.toBe(true);
+    expect((await call({ screenId: "x", sections: ["palette"] })).isError).toBe(true);
+  });
   it("does not eagerly include reference contents in command help", async () => {
     const result = textOf(await (await connect()).callTool({ name: "get_command", arguments: { verb: "build" } }));
     expect(result.length).toBeLessThan(1500); expect(result).toContain("craft-flow");

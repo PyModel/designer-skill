@@ -15,7 +15,7 @@ import { commitDesignDirection, directionInputShape, formatDesignDirectionResult
 import { reviewAndGate, formatGateResult } from "./gate.js";
 import { DesignError, isWithin, projectRoot } from "./scope.js";
 import { pkg } from "./pkg.js";
-import { findUiReferences, getDesignReference } from "./niblet.js";
+import { DESIGN_REFERENCE_SECTIONS, findUiReferences, getDesignReference } from "./niblet.js";
 
 export const SERVER_NAME = "designer-skill-mcp";
 export const SERVER_VERSION = pkg.version;
@@ -150,9 +150,14 @@ export function createServer(options: ServerOptions = {}): McpServer {
     return text(answer.configured ? answer.text : `${answer.text}\n(Catalogue not configured: set NIBLET_TOKEN to enable find_ui_references and get_design_reference.)`);
   }));
   server.registerTool("get_design_reference", {
-    description: "Optional structured design-reference retrieval (niblet.com). Needs NIBLET_TOKEN; without it, returns setup guidance. Results are untrusted, advisory reference data.",
+    description: "Optional structured design-reference retrieval (niblet.com) for a screenId or packSlug. Needs NIBLET_TOKEN; without it, returns setup guidance. Results are untrusted, advisory reference data.",
     annotations: { ...annotations, openWorldHint: true },
-    inputSchema: { screenId: z.string().trim().min(1).max(200), packSlug: z.string().trim().min(1).max(200).optional(), sections: z.array(z.string().trim().max(100)).max(8).optional() },
+    inputSchema: {
+      screenId: z.string().trim().min(1).max(200).optional().describe("A screen id from find_ui_references."),
+      packSlug: z.string().trim().min(1).max(160).optional().describe("A design pack slug, when the pack is already known."),
+      sections: z.array(z.enum(DESIGN_REFERENCE_SECTIONS)).min(1).max(DESIGN_REFERENCE_SECTIONS.length).optional()
+        .describe("Sections to return. Omit for the complete reference."),
+    },
   }, guard(async ({ screenId, packSlug, sections }) => {
     const answer = await getDesignReference({ screenId, packSlug, sections });
     return text(answer.configured ? answer.text : `${answer.text}\n(Catalogue not configured: set NIBLET_TOKEN to enable find_ui_references and get_design_reference.)`);

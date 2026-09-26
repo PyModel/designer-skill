@@ -5,7 +5,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "../src/server.js";
 
-vi.mock("../src/niblet.js", () => ({
+vi.mock("../src/niblet.js", async (original) => ({
+  ...await original<typeof import("../src/niblet.js")>(),
   findUiReferences: () => { throw new TypeError("catalogue exploded"); },
   getDesignReference: () => { throw new TypeError("catalogue exploded"); },
 }));
