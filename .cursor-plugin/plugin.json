@@ -1,7 +1,7 @@
 {
   "name": "designer-skill",
   "displayName": "designer-skill",
-  "version": "0.18.1",
+  "version": "0.19.0",
   "description": "Plug-and-play MCP: UI superpowers, design references, anti-slop static gate.",
   "author": {
     "name": "PyModel",

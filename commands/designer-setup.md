@@ -48,4 +48,4 @@ If the plugin did not wire MCP, add repo-root `mcp.json` (or `.cursor/mcp.json`)
 }
 ```
 
-Pin a version for teams: replace `@pymodel/designer-skill-mcp@latest` with `@pymodel/designer-skill-mcp@0.18.1` in `args`.
+Pin a version for teams: replace `@pymodel/designer-skill-mcp@latest` with `@pymodel/designer-skill-mcp@0.19.0` in `args`.
