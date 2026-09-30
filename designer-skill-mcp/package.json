@@ -47,7 +47,7 @@
   "homepage": "https://github.com/PyModel/designer-skill#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "css-select": "^6.0.0",
+    "css-select": "^7.0.0",
     "css-tree": "^3.2.1",
     "express": "^5.2.1",
     "htmlparser2": "^10.1.0",
