@@ -1,0 +1,2 @@
+export function gradeDecision(testCase: { id: string; environment: Record<string, unknown>; expected: Record<string, unknown> }, response: unknown): { passed: boolean; failures: string[] };
+export function gradeRun(run: unknown): { status: string; scope: string; passed: number; failed: number; notRun: number; passRate: number | null; coverage: number; results: { caseId: string; repetition: number; status: string; failures: string[] }[] };

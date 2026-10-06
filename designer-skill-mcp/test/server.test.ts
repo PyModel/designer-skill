@@ -57,14 +57,18 @@ describe("intent routing regressions", () => {
 });
 
 describe("MCP contract", () => {
-  it("advertises the fourteen supported tools and gate output schema", async () => {
+  it("advertises the fifteen supported tools and gate output schema", async () => {
     const tools = (await (await connect()).listTools()).tools;
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "anti_slop_checklist", "commit_design_direction", "detect_antipatterns", "dispatch_intent", "find_ui_references",
+      "anti_slop_checklist", "commit_design_direction", "detect_antipatterns", "dispatch_intent", "find_ui_materials", "find_ui_references",
       "get_command", "get_design_reference", "get_design_system", "get_palette_seed", "get_preflight_brief",
       "get_reference", "list_commands", "load_project_context", "review_and_gate",
     ].sort());
     expect(tools.find((t) => t.name === "review_and_gate")?.outputSchema).toBeDefined();
+  });
+  it("keeps the remote-only component tool unregistered, like Niblet's own local adapter", async () => {
+    const names = (await (await connect()).listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain("get_ui_component");
   });
   it("keeps instructions compact and context first", async () => {
     expect(SERVER_INSTRUCTIONS.length).toBeLessThan(700);
@@ -76,7 +80,7 @@ describe("MCP contract", () => {
     const result = await client.callTool({ name: "dispatch_intent", arguments: { request: "css" } });
     expect(result.structuredContent).toMatchObject({ reason: "explicit", matched: [{ verb: "css" }] });
     const help = await client.callTool({ name: "get_command", arguments: { verb: "css" } });
-    expect(help.isError).not.toBe(true); expect(help.structuredContent).toMatchObject({ references: ["css-techniques", "design-principles"] });
+    expect(help.isError).not.toBe(true); expect(help.structuredContent).toMatchObject({ references: ["css-techniques", "design-principles", "native-web"] });
   });
   it("supports aliases but rejects unknown explicit commands", async () => {
     const client = await connect();
@@ -92,6 +96,29 @@ describe("MCP contract", () => {
     expect((await call({ packSlug: "acme" })).isError).not.toBe(true);
     expect((await call({ screenId: "x", sections: ["colors", "provenance"] })).isError).not.toBe(true);
     expect((await call({ screenId: "x", sections: ["palette"] })).isError).toBe(true);
+    expect((await call({ screenId: "x".repeat(161) })).isError).toBe(true);
+  });
+  it("enforces the discovered Niblet argument bounds on find_ui_references", async () => {
+    const client = await connect();
+    const call = (args: Record<string, unknown>) => client.callTool({ name: "find_ui_references", arguments: args });
+    expect((await call({ query: "a" })).isError).not.toBe(true);            // contract floor: 1 character
+    expect((await call({ query: "x".repeat(240) })).isError).not.toBe(true); // contract ceiling: 240
+    expect((await call({ query: "x".repeat(241) })).isError).toBe(true);
+    expect((await call({ query: "ok", selectedIds: ["a", "b", "c", "d"] })).isError).toBe(true);
+    expect((await call({ query: "ok", selectedIds: ["id".repeat(80) + "x"] })).isError).toBe(true); // >160 chars
+    expect((await call({ query: "ok", clientSkillVersion: "v".repeat(65) })).isError).toBe(true);
+  });
+  it("routes find_ui_materials to boundary guidance and refuses packs without NIBLET_TOKEN", async () => {
+    const saved = process.env.NIBLET_TOKEN;
+    delete process.env.NIBLET_TOKEN;
+    cleanup.push(() => { if (saved !== undefined) process.env.NIBLET_TOKEN = saved; });
+    const client = await connect();
+    const materials = textOf(await client.callTool({ name: "find_ui_materials", arguments: { query: "outlined navigation icons", kind: "icon" } }));
+    expect(materials).toContain("NIBLET_TOKEN");
+    expect(materials).toContain("remote-only");
+    expect(materials).toContain("license");
+    const refusal = textOf(await client.callTool({ name: "find_ui_materials", arguments: { query: "icons", kind: "pack" } }));
+    expect(refusal).toContain("no packs");
   });
   it("does not eagerly include reference contents in command help", async () => {
     const result = textOf(await (await connect()).callTool({ name: "get_command", arguments: { verb: "build" } }));

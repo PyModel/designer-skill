@@ -24,9 +24,10 @@ try {
   assert(packed && !isAbsolute(packed.filename) && !/[\\/]/.test(packed.filename), 'npm pack produced one local tarball');
   const shipped = new Set(packed.files.map((f) => f.path));
   for (const required of ['dist/index.js', 'assets/engine/node/scan-worker.mjs', 'assets/engine/registry/antipatterns.mjs',
-    'assets/skill/manifest.json', 'assets/ux-designer/manifest.json']) {
+    'assets/skill/manifest.json']) {
     assert(shipped.has(required), `tarball is missing ${required}`);
   }
+  assert(!shipped.has('assets/ux-designer/manifest.json'), 'ux-designer content ships inside assets/skill (reference/ux), not as a second bundle');
   for (const path of shipped) assert(!/^(src|test|scripts)\//.test(path), `tarball ships dev file ${path}`);
 
   const app = join(temporary, 'app');
@@ -36,7 +37,7 @@ try {
   run('npm', ['install', '--omit=dev', '--no-audit', '--no-fund', '--ignore-scripts', join(temporary, packed.filename)], app);
   const installed = join(app, 'node_modules', ...pkg.name.split('/'));
 
-  for (const bundle of ['skill', 'ux-designer']) {
+  for (const bundle of ['skill']) {
     const root = join(installed, 'assets', bundle);
     const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));
     for (const [path, digest] of Object.entries(manifest.files)) {
@@ -57,7 +58,7 @@ try {
   }));
 
   const tools = (await client.listTools()).tools.map((t) => t.name);
-  assert.equal(tools.length, 14, `expected 14 tools, got ${tools.length}: ${tools.join(', ')}`);
+  assert.equal(tools.length, 15, `expected 15 tools, got ${tools.length}: ${tools.join(', ')}`);
 
   const gate = await client.callTool({ name: 'review_and_gate', arguments: { cwd: project, target: '.' } });
   assert.notEqual(gate.isError, true, JSON.stringify(gate.content));

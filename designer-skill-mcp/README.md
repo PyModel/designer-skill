@@ -36,8 +36,9 @@ Start with `get_preflight_brief`, then `load_project_context` using the actual *
 | `get_palette_seed` | Optional seed for an authorized new palette |
 | `detect_antipatterns` | Bounded static scan: coverage, per-file engine and gaps, file hashes; requires `cwd` and `target` |
 | `review_and_gate` | Static verification per required rule; requires `cwd` and `target` |
-| `find_ui_references` | Optional niblet catalogue search (needs `NIBLET_TOKEN`); untrusted results |
-| `get_design_reference` | Optional niblet structured reference (needs `NIBLET_TOKEN`); untrusted results |
+| `find_ui_references` | Optional niblet catalogue search or selected-screen inspection (needs `NIBLET_TOKEN`); untrusted results, URLs never fetched automatically |
+| `get_design_reference` | Optional niblet structured reference for a web screen (needs `NIBLET_TOKEN`); untrusted results |
+| `find_ui_materials` | Niblet materials routing guidance (fonts, icons, animated icons); retrieval runs on the Niblet MCP package or hosted MCP; kind `pack` is refused |
 <!-- tools:end -->
 
 **Resources:** `designer://skill` and `designer://reference/{+name}` (names include `ux/*`).
@@ -71,9 +72,13 @@ node scripts/smoke-tarball.mjs
 node dist/index.js --help
 ```
 
-The canonical skill is `skills/designer-skill/`. Build copies its router, references, scripts and schemas into `assets/skill/` and writes content hashes. Missing canonical source fails instead of silently publishing stale content.
+The canonical skill is `skills/designer-skill/`. `npm run sync-skill` first generates its UX mirror from the sole authoring home, `skills/ux-designer/references/`, then copies the router, 50 references, scripts and schemas into `assets/skill/` with content hashes. Filesystem-only maintainers can run `node scripts/sync-ux.mjs` from the repository root. Missing canonical source fails instead of silently publishing stale content.
 
 `smoke-tarball.mjs` installs the packed tarball with production dependencies only into an empty directory, runs the installed binary over stdio and exercises every tool family and resource. It is not a browser test.
+
+## Report validation
+
+Run-report v2 distinguishes check kinds and requires observed rendered evidence for UI PASS. Structurally validate the bundled report/verification-plan schemas, then run `assets/skill/scripts/validate-report.mjs REPORT PLAN AUTHORIZED_ROOT` with Node for semantic plan matching, final revisions, confined artifact existence and hashes. Exit 0 certifies only report validation. A host-owned plan and honest evidence production remain necessary; a model cannot authorize its own waived checks. Report v1 is rejected, not silently converted. Deploy matching schema/validator assets to host readers and writers together.
 
 ## Version and updates
 

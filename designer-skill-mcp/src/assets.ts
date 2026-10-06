@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type BundledKind = "skill" | "ux-designer" | "engine";
+export type BundledKind = "skill" | "engine";
 
 interface BundledLocation {
   bundled: string;
@@ -21,12 +21,6 @@ const LOCATIONS: Record<BundledKind, BundledLocation> = {
     dev: join("..", "skills", "designer-skill"),
     probe: "SKILL.md",
     label: "designer-skill content",
-  },
-  "ux-designer": {
-    bundled: join("assets", "ux-designer"),
-    dev: join("..", "skills", "ux-designer"),
-    probe: "SKILL.md",
-    label: "ux-designer content",
   },
   engine: {
     bundled: join("assets", "engine"),

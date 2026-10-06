@@ -12,17 +12,20 @@ const validate = new Ajv2020({ allErrors: true, strict: false }).compile(schema)
 const sha = "a".repeat(64);
 const evidence = (origin: "executed" | "observed" | "attested") => ({ artifact: "report.json", sha256: sha, producer: "playwright", revision: "abc", origin });
 const check = (status: string, origin: "executed" | "observed" | "attested" = "executed", required = true) =>
-  ({ id: "rendered", required, status, reason: "ran", evidence: status === "PASS" || status === "FAIL" ? [evidence(origin)] : [] });
+  ({ id: "rendered", kind: "rendered", required, status, reason: "ran", evidence: status === "PASS" || status === "FAIL" ? [evidence(origin)] : [] });
 const base = {
-  schemaVersion: 1, runId: "r1", mode: "implement", inputRevision: "a", outputRevision: "b", inputHash: sha,
-  taskStatus: "COMPLETE", uiReadiness: "PASS", checks: [check("PASS")], findings: [], changes: ["src/a.css"], limitations: [],
+  schemaVersion: 2, runId: "r1", mode: "implement", inputRevision: "a", outputRevision: "b", inputHash: sha,
+  taskStatus: "COMPLETE", uiReadiness: "PASS", checks: [check("PASS", "observed")], findings: [], changes: ["src/a.css"], limitations: [],
 };
 
 describe("run-report schema coherence", () => {
-  it("accepts a coherent PASS backed by executed evidence", () => {
+  it("accepts a coherent UI PASS backed by observed rendered evidence", () => {
     expect(validate(base), JSON.stringify(validate.errors)).toBe(true);
   });
   it.each([
+    ["legacy v1 report", { schemaVersion: 1 }],
+    ["static-only UI PASS", { checks: [{ ...check("PASS"), id: "typecheck", kind: "static" }] }],
+    ["rendering not inspected", { checks: [check("PASS", "executed")] }],
     ["PASS backed only by attested evidence", { checks: [check("PASS", "attested")] }],
     ["BLOCKED task claiming UI PASS", { taskStatus: "BLOCKED" }],
     ["PASS with a required check not run", { checks: [check("PASS"), check("NOT_RUN")] }],
@@ -38,7 +41,7 @@ describe("run-report schema coherence", () => {
     expect(validate({ ...base, mode: "audit", changes: [], taskStatus: "PARTIAL", uiReadiness: "NOT_VERIFIED", checks: [check("PASS", "attested")] })).toBe(false);
   });
   it("accepts attested evidence on an optional check", () => {
-    expect(validate({ ...base, checks: [check("PASS"), { ...check("PASS", "attested", false), id: "manual" }] })).toBe(true);
+    expect(validate({ ...base, checks: [check("PASS", "observed"), { ...check("PASS", "attested", false), id: "manual" }] })).toBe(true);
   });
   it("allows a completed audit that reports FAIL", () => {
     expect(validate({ ...base, mode: "audit", changes: [], uiReadiness: "FAIL", checks: [check("FAIL")] })).toBe(true);

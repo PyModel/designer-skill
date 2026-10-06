@@ -7,12 +7,16 @@ import { createHash } from 'node:crypto';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SHIPPED_DIR_ROOTS } from './shipped-roots.mjs';
+import { syncUxReferences } from '../../scripts/sync-ux.mjs';
 
 const pkgRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// Generate the filesystem-install mirror before packaging that same skill tree.
+syncUxReferences();
 
 const MODULES = [
+  // Single shipped module: skills/designer-skill bundles the ux-designer
+  // reference library at reference/ux/, so one module covers both registries.
   { src: resolve(pkgRoot, '..', 'skills', 'designer-skill'), dest: 'skill', subdirs: ['reference', 'scripts', 'schemas'] },
-  { src: resolve(pkgRoot, '..', 'skills', 'ux-designer'), dest: 'ux-designer', subdirs: ['references'] },
 ];
 
 // npm drops these from a tarball even when `files` whitelists their directory,

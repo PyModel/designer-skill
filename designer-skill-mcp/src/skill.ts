@@ -8,7 +8,8 @@ export const REFERENCE_NAMES = [
   "design-principles", "aesthetic-systems", "motion-and-interaction", "engineering-and-performance",
   "avoid-ai-slop", "differentiation-playbook", "refactor-and-redesign", "command-playbook",
   "interaction-design", "visual-critique", "design-systems", "project-init", "craft-flow", "live-mode", "css-techniques",
-  "verification-and-recovery",
+  "verification-and-recovery", "niblet-catalogue", "motion-vocabulary", "fluid-input-principles",
+  "native-web", "worst-case-data", "variant-prototyping", "dependency-selection", "craft-provenance",
 ] as const;
 export type ReferenceName = (typeof REFERENCE_NAMES)[number];
 export const REFERENCE_DESCRIPTIONS: Record<ReferenceName, string> = {
@@ -28,10 +29,21 @@ export const REFERENCE_DESCRIPTIONS: Record<ReferenceName, string> = {
   "live-mode": "Authorized browser preview and variant iteration.",
   "css-techniques": "Supported CSS implementation patterns.",
   "verification-and-recovery": "Evidence rules, gate statuses, rendered checks and failure triage.",
+  "niblet-catalogue": "Niblet four-tool workflow: screens, materials, components, bounds and evidence rules.",
+  "motion-vocabulary": "Reverse lookup: motion described by feel mapped to standard terms.",
+  "fluid-input-principles": "Respond during input, continuity, velocity, interruption-safe motion.",
+  "native-web": "Mobile-web symptom fixes: tap, viewport, safe areas, zoom, overscroll.",
+  "worst-case-data": "Plausible adversarial data values and how to verify layouts against them.",
+  "variant-prototyping": "Compare competing directions on a named axis, isolated from production.",
+  "dependency-selection": "Task-first UI dependency method: existing assets, one reasoned recommendation.",
+  "craft-provenance": "On-demand historical capability mapping and source attribution.",
 };
 
-// ux-designer reference files, namespaced under "ux/". Files live in the
-// ux-designer skill's own references/ directory.
+// ux-designer reference files, namespaced under "ux/" and vendored inside this
+// skill's reference/ux/ directory so a filesystem skill-only install is
+// self-contained. The canonical authoring home stays skills/ux-designer/
+// references/; scripts/sync-ux.mjs generates the mirror before packaging,
+// and test/reference-reachability.test.ts fails on drift.
 export const UX_REFERENCE_NAMES = [
   "ux/01-core-principles",
   "ux/02-laws-of-ux",
@@ -108,10 +120,8 @@ export function isReferenceName(value: string): value is ReferenceId {
 }
 export function getReferenceDoc(name: ReferenceId): string {
   if (!isReferenceName(name)) throw new Error(`Unknown reference "${name}".`);
-  // ux/* files live in the ux-designer module's own references/ directory.
-  const base = name.startsWith("ux/")
-    ? join(bundledRoot("ux-designer"), "references", `${name.slice(3)}.md`)
-    : join(bundledRoot("skill"), "reference", `${name}.md`);
+  // Vendored ux/* copies live beside the designer references in reference/ux/.
+  const base = join(bundledRoot("skill"), "reference", `${name}.md`);
   if (!existsSync(base)) throw new Error(`Missing reference file: ${base}`);
   return readDocument(base);
 }

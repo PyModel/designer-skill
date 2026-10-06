@@ -4,4 +4,3 @@ assets/skill/
 *.log
 .env
 .DS_Store
-assets/ux-designer/

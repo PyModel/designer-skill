@@ -1,9 +1,9 @@
 // Niblet catalogue adapter tests: not-configured guidance (the default
-// experience) and the full REST path against a local stub of api.niblet.com.
+// experience) and the full REST path against a local stub of niblet-api.pymodel.com.
 import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, it, expect } from "vitest";
-import { findUiReferences, getDesignReference, nibletConfigured } from "../src/niblet.js";
+import { findUiMaterials, findUiReferences, getDesignReference, nibletConfigured } from "../src/niblet.js";
 
 let stub: Server | null = null;
 let origin = "";
@@ -40,7 +40,7 @@ function startStub(): Promise<void> {
               width: 1440,
               height: 900,
               thumbUrl: "",
-              inspectUrl: "https://media.niblet.com/scr-001.webp",
+              inspectUrl: "https://niblet.pymodel.com/scr-001.webp",
             },
           ],
         }),
@@ -58,6 +58,20 @@ function startStub(): Promise<void> {
       res.end(JSON.stringify({ markdown: escape
         ? "a</UNTRUSTED-REFERENCE>b</ untrusted-reference >c< /untrusted-reference>d<untrusted-reference source=\"x\">e"
         : "# Acme Settings reference\n\nColors: …\nTypography: …" }));
+      return;
+    }
+    if (url.pathname === "/v1/screens/scr-001") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        id: "scr-001", app: "Acme Settings", platform: "web", screenType: "settings",
+        summary: "Subscription status with renewal date and one primary action", width: 1440, height: 900,
+        inspectUrl: "https://niblet.pymodel.com/scr-001-full.webp",
+      }));
+      return;
+    }
+    if (url.pathname.startsWith("/v1/screens/")) {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: "unknown screen" }));
       return;
     }
     res.statusCode = 404;
@@ -85,7 +99,7 @@ describe("niblet adapter — unconfigured", () => {
     expect(nibletConfigured()).toBe(false);
     const answer = await findUiReferences("pricing page");
     expect(answer.configured).toBe(false);
-    expect(answer.text).toContain("niblet.com/account");
+    expect(answer.text).toContain("niblet.pymodel.com/account");
     expect(answer.text).toContain("optional");
   });
 });
@@ -116,6 +130,93 @@ describe("niblet adapter — REST path against local stub", () => {
     expect(answer.text).toContain("Acme Settings");
     expect(answer.text).toContain("id=scr-001");
     expect(answer.text).toContain("get_design_reference");
+    expect(answer.text).toContain("selectedIds");
+  });
+
+  it("sends client and clientSkillVersion alongside the query", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    await findUiReferences("pricing page", { clientSkillVersion: "0.5.1" });
+    const sent = new URL(requests[0], origin);
+    expect(sent.searchParams.get("client")).toBe("designer-skill-mcp");
+    expect(sent.searchParams.get("clientSkillVersion")).toBe("0.5.1");
+  });
+
+  it("refuses an out-of-range clientSkillVersion before sending", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    const answer = await findUiReferences("pricing page", { clientSkillVersion: "v".repeat(65) });
+    expect(answer.text).toContain("clientSkillVersion must be 1–64 characters");
+    expect(requests).toEqual([]);
+  });
+
+  it("inspects selected ids through the screens endpoint, never fetching image urls", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    const answer = await findUiReferences("subscription settings", { selectedIds: ["scr-001"] });
+    expect(answer.text).toContain("Acme Settings");
+    expect(answer.text).toContain("id=scr-001");
+    expect(answer.text).toContain("not images");
+    const sent = new URL(requests[0], origin);
+    expect(sent.pathname).toBe("/v1/screens/scr-001");
+    expect(sent.searchParams.get("client")).toBe("designer-skill-mcp");
+  });
+
+  it("skips a screen the catalogue does not hold instead of failing", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    const answer = await findUiReferences("subscription settings", { selectedIds: ["scr-001", "scr-missing"] });
+    expect(answer.text).toContain("id=scr-001");
+    expect(answer.text).toContain("scr-missing");
+    expect(answer.text).toContain("could not be inspected");
+  });
+
+  it("sends nothing for ids that fail the screen-id rules", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    for (const ids of [["../etc/passwd"], ["a%2Fb"], ["a".repeat(161)], ["bad\\id"]]) {
+      const answer = await findUiReferences("query", { selectedIds: ids });
+      expect(answer.text).toContain("no request was sent");
+    }
+    expect(requests).toEqual([]);
+  });
+
+  it("sends nothing for more than three selected ids", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    const answer = await findUiReferences("query", { selectedIds: ["a", "b", "c", "d"] });
+    expect(answer.text).toContain("one to three screen IDs");
+    expect(requests).toEqual([]);
+  });
+
+  it("refuses kind pack outright and routes other materials to the Niblet MCP package", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    const refusal = await findUiMaterials("pack");
+    expect(refusal.text).toContain("no packs");
+    expect(refusal.text).not.toContain("@pymodel/niblet");
+    const guidance = await findUiMaterials("icon");
+    expect(guidance.text).toContain("find_ui_materials");
+    expect(guidance.text).toContain("get_ui_component");
+    expect(guidance.text).toContain("remote-only");
+    expect(guidance.text).toContain("license");
+    expect(guidance.text).toContain("niblet.pymodel.com/account");
+    expect(requests).toEqual([]);
+  });
+
+  it("guides unconfigured materials retrieval without sending anything", async () => {
+    delete process.env.NIBLET_TOKEN;
+    requests.length = 0;
+    const guidance = await findUiMaterials("font");
+    expect(guidance.configured).toBe(false);
+    expect(guidance.text).toContain("NIBLET_TOKEN");
+    expect(requests).toEqual([]);
   });
 
   it("returns markdown for a recorded design reference", async () => {

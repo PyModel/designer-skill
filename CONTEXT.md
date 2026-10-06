@@ -1,7 +1,7 @@
 # Designer Skill
 
-A UI-design skill product: two bundled skill modules, an MCP server that
-serves them with bounded, evidence-first contracts, and a vendored static
+A UI-design skill product: one self-contained bundled skill, an MCP server that
+serves it with bounded, evidence-first contracts, and a vendored static
 detector. This glossary is the canonical language for all of it.
 
 ## Language
@@ -48,8 +48,9 @@ _Avoid_: doc, file, guide
 A module's SKILL.md: the entry contract that routes to its references.
 
 **ux-designer**:
-The second skill module: a UX depth library (accessibility, IA, canvas apps,
-AI patterns), disjoint from designer-skill's craft references.
+The UX depth authoring library (accessibility, IA, canvas apps, AI patterns).
+Its references are generated into designer-skill's `reference/ux/` by
+`scripts/sync-ux.mjs`; the MCP ships one skill bundle with disjoint namespaces.
 
 **Bundled asset**:
 The packaged copy of skill content inside the npm package, with a dev-tree
@@ -88,6 +89,16 @@ _Avoid_: ship gate, check pass, readiness certificate
 **NOT_VERIFIED**:
 The gate's best overall outcome: statics passed, rendered and behavioral
 checks remain someone else's evidence.
+
+**Verification plan**:
+Host-owned required check IDs/kinds and run/revision identity. A report cannot
+redefine its obligations or authorize its own non-applicability.
+
+**Run report**:
+Version-2 task completion/readiness claims with classified check evidence.
+Structural schema validation plus the portable semantic validator reject static-only
+UI PASS, stale checks, missing/escaping artifacts and mismatched hashes. Report
+validation PASS does not establish the truth of self-reported observation.
 
 ### Direction
 
@@ -128,9 +139,11 @@ never forcing setup.
 _Avoid_: project config, settings
 
 **Niblet catalogue**:
-Optional real-screen reference retrieval from niblet.com. Retrieval is
-advisory context, never a style mandate; unconfigured access degrades to
-setup guidance.
+Optional real-screen reference, design-reference and materials retrieval
+from niblet.pymodel.com (four documented tools: find_ui_references,
+find_ui_materials, get_design_reference, and the remote-only
+get_ui_component). Retrieval is advisory context, never a style mandate;
+unconfigured access degrades to setup guidance.
 _Avoid_: image search, inspiration lookup
 
 **Palette seed**:
