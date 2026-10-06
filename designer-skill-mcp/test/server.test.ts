@@ -117,6 +117,11 @@ describe("MCP contract", () => {
     expect(materials).toContain("NIBLET_TOKEN");
     expect(materials).toContain("remote-only");
     expect(materials).toContain("license");
+    const component = textOf(await client.callTool({ name: "find_ui_materials", arguments: { query: "accessible disclosure", kind: "component" } }));
+    expect(component).toContain("get_ui_component");
+    expect(component).toContain("remote-only");
+    const references = textOf(await client.callTool({ name: "find_ui_references", arguments: { query: "settings" } }));
+    expect(references).not.toContain("enable find_ui_references, get_design_reference and find_ui_materials");
     const refusal = textOf(await client.callTool({ name: "find_ui_materials", arguments: { query: "icons", kind: "pack" } }));
     expect(refusal).toContain("no packs");
   });

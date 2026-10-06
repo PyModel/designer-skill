@@ -27,7 +27,7 @@
 **Paste into your agent** (Claude Code, Codex, Cursor, any MCP client). It installs the skill, wires the MCP and verifies the tools:
 
 ```text
-Add designer-skill alongside Niblet Designer UI. It is optional and keyless: it routes a design request, loads the right reference, and gates the ship. Niblet supplies the real screens and materials.
+Add designer-skill alongside Niblet Designer UI. The designer core is keyless: it routes requests, loads guidance and runs supplemental static checks. Niblet optionally supplies real screens and licensed materials; the host owns implementation and rendered verification.
 
 1. Install or refresh the skill into the user skill directory (not this project):
 npx skills add PyModel/designer-skill --skill designer-skill -g -y
@@ -42,10 +42,10 @@ No API key is needed. Do not add one.
 
 3. Verify: list the designer-skill server's tools and confirm get_preflight_brief, dispatch_intent, review_and_gate are present. Do not run a sample check.
 
-When setup is complete, confirm that the designer-skill skill is installed and that the three tools are exposed. On UI work from now on: call get_preflight_brief first, use dispatch_intent to load only the references it recommends, pull screen references and materials from the niblet server, then call review_and_gate on the changed files before saying the work is done. If there is an active UI task, continue it. Otherwise say: "designer-skill is ready and paired with Niblet."
+When setup is complete, confirm the skill is installed and the three named tools are exposed. On UI work: call get_preflight_brief, use dispatch_intent and load only relevant guidance. If an unresolved visual question warrants retrieval, use the separately configured niblet server's discovered tools. Prefer its image content for inspection; designer-skill's catalogue wrappers return metadata or routing guidance only. Run review_and_gate as supplemental static evidence, then perform the required rendered, functional and accessibility checks in the host. Never treat static success as UI PASS. Preserve audit/plan scope. Continue an active authorized task; otherwise report designer-skill ready, and report Niblet paired only if its tools were actually observed.
 ```
 
-No Niblet? Drop the "pull screen references and materials from the niblet server" clause.
+No Niblet? Continue from local product evidence; catalogue retrieval is optional.
 
 **Or pick one:**
 
@@ -129,6 +129,19 @@ flowchart LR
 
 The gate is static only: overall status is `FAIL` or `NOT_VERIFIED`, never a rendered-readiness pass. Rendered, accessibility and performance checks stay `NOT_RUN` until the host supplies evidence.
 
+### Niblet ecosystem
+
+| Owner | Responsibility |
+|---|---|
+| `designer-skill` | One entry point for scope, routing, craft/UX guidance and verification reporting |
+| Niblet platform | Real-screen catalogue, recorded design references and license-recorded materials |
+| Niblet MCP | Reference images and material retrieval; hosted `get_ui_component` provides React source |
+| Agent host | Authorized file/dependency changes, browser/native interaction, rendered inspection and evidence |
+
+Discover tools per server: the same `find_ui_references` name on designer-skill is a **text-only REST wrapper**, not Niblet's image-delivering tool. Prefer Niblet MCP for reference inspection and materials. Do not call both providers for the same question or infer connectivity from installation. Consult [`niblet-catalogue`](skills/designer-skill/reference/niblet-catalogue.md) for deployment differences, bounds and licensing.
+
+Use one product-grounded design contract. Niblet's surface modes (**Persuade, Operate, Read, Experience**) describe the user's job; designer-skill's execution modes (**audit, plan, refine, implement, system**) describe permitted work. They are independent: an Operate surface can receive a read-only audit or an authorized refinement. Existing product tokens, components and real content win over reference aesthetics. Component retrieval does not authorize dependency installation or source writes, and neither MCP certifies rendered quality.
+
 **Example:** *"Use designer-skill to redesign this pricing page without breaking functionality."* → `get_preflight_brief` → `dispatch_intent` → `get_reference` → edit → `review_and_gate`.
 
 <div align="center">
@@ -200,7 +213,7 @@ Plus 26 `ux/*` references, authored in [`skills/ux-designer/`](skills/ux-designe
 | `get_palette_seed` | OKLCH brand seed for authorized new palette work |
 | `detect_antipatterns` | Deterministic static scan (44 rules): coverage, file hashes, gaps |
 | `review_and_gate` | Static gate per required rule; never claims rendered readiness |
-| `find_ui_references` | Optional niblet real-screen search or selected-screen inspection (`NIBLET_TOKEN`) |
+| `find_ui_references` | Optional text-only Niblet real-screen search or selected-screen metadata (`NIBLET_TOKEN`) |
 | `get_design_reference` | Optional niblet structured reference for a web screen (`NIBLET_TOKEN`) |
 | `find_ui_materials` | Niblet materials routing guidance; retrieval runs on the Niblet MCP package or hosted MCP (`kind: pack` refused) |
 <!-- tools:end -->

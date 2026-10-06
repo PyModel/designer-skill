@@ -11,7 +11,6 @@ const DEFAULT_API_ORIGIN = "https://niblet-api.pymodel.com";
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_REFERENCE_CHARS = 20_000;
-const MAX_RECORD_CHARS = 2_000;
 const CLIENT = "designer-skill-mcp";
 const CATALOGUE_HOST = "niblet.pymodel.com";
 const ACCOUNT_URL = `https://${CATALOGUE_HOST}/account`;
@@ -204,9 +203,9 @@ function str(value: unknown, max = 2000): string | null {
 function parseReference(raw: unknown): UiReference | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
-  const id = str(r.id, 160);
+  const id = typeof r.id === "string" && isValidScreenId(r.id) ? r.id : null;
   const app = str(r.app, 200);
-  const platform = str(r.platform, 40);
+  const platform = r.platform === "web" || r.platform === "ios" ? r.platform : null;
   if (!id || !app || !platform) return null;
   return {
     id,
@@ -232,25 +231,6 @@ function referenceText(ref: UiReference, index: number): string {
     .join("\n");
 }
 
-/** Common screen-record fields, defensively read; anything unmapped stays in the JSON fallback. */
-function parseScreenRecord(raw: Record<string, unknown>): UiReference | null {
-  const id = str(raw.id, 160) ?? str(raw.screenId, 160);
-  const app = str(raw.app, 200) ?? str(raw.name, 200) ?? str(raw.title, 200);
-  const platform = str(raw.platform, 40) ?? "web";
-  if (!id || !app) return null;
-  return {
-    id,
-    app,
-    platform,
-    screenType: str(raw.screenType, 200),
-    summary: str(raw.summary, 400) ?? str(raw.description, 400),
-    width: typeof raw.width === "number" ? raw.width : null,
-    height: typeof raw.height === "number" ? raw.height : null,
-    thumbUrl: str(raw.thumbUrl) ?? "",
-    inspectUrl: str(raw.inspectUrl) ?? str(raw.url) ?? "",
-  };
-}
-
 /** Inspection-quality metadata line for one screen record. */
 function screenRecordText(ref: UiReference): string {
   const size = ref.width && ref.height ? `, ${ref.width}×${ref.height}` : "";
@@ -261,13 +241,9 @@ function screenRecordText(ref: UiReference): string {
   ].filter(Boolean).join("\n");
 }
 
-function boundedJson(value: unknown): string {
-  return JSON.stringify(value).slice(0, MAX_RECORD_CHARS);
-}
-
 /** Find up to three real full-screen references for a concrete UI question, or —
  *  with selectedIds — re-read those exact screens for inspection metadata.
- *  URLs are returned as data for the agent to open deliberately, never fetched here. */
+ *  URLs remain metadata. Use the discovered Niblet MCP's image content for visual inspection. */
 export async function findUiReferences(
   query: string,
   options: { platform?: "web" | "ios"; limit?: number; selectedIds?: string[]; clientSkillVersion?: string } = {},
@@ -298,14 +274,18 @@ export async function findUiReferences(
         lines.push("", `- id=${id}: ${result.message}`);
         continue;
       }
+      // /v1/screens/:id returns { screen, siblings }, not a flat screen record.
       const record = result.data as Record<string, unknown>;
-      const ref = parseScreenRecord(record);
+      const ref = parseReference(record.screen);
+      if (!ref || ref.id !== id) {
+        lines.push("", `- id=${id}: Niblet API returned an invalid screen response.`);
+        continue;
+      }
       inspected += 1;
-      lines.push("", ref ? screenRecordText(ref) : `- id=${id}\n   ${boundedJson(record)}`);
+      lines.push("", screenRecordText(ref));
     }
-    lines.push("", inspected === ids.length
-      ? "Inspection metadata only: these are not images. Open a returned URL deliberately to view a screen."
-      : "Some screens could not be inspected; the remaining text stands alone.");
+    lines.push("", "Inspection metadata only: these are not images. Use the discovered Niblet MCP's find_ui_references with selectedIds to receive image content; do not fetch returned URLs automatically.");
+    if (inspected !== ids.length) lines.push("Some screens could not be inspected; the remaining text stands alone.");
     return { configured: true, text: lines.join("\n") };
   }
 
@@ -313,7 +293,10 @@ export async function findUiReferences(
   const result = await requestJson("/v1/search", credentials.key, { q: query, platform: options.platform, limit, client: CLIENT, clientSkillVersion: clientVersion });
   if (!result.ok) return { configured: true, text: `${result.message}\nContinue with the bundled reference files (get_reference).` };
   const data = result.data as { results?: unknown[] };
-  const refs = (Array.isArray(data.results) ? data.results : []).map(parseReference).filter((r): r is UiReference => r !== null).slice(0, limit);
+  if (!Array.isArray(data.results)) return { configured: true, text: "Niblet API returned an invalid search response. Continue with the local design system; this does not establish an empty catalogue." };
+  const parsed = data.results.slice(0, limit).map(parseReference);
+  if (parsed.some(ref => ref === null)) return { configured: true, text: "Niblet API returned an invalid search response. Continue with the local design system; this does not establish an empty catalogue." };
+  const refs = parsed.filter((ref): ref is UiReference => ref !== null);
   if (refs.length === 0) {
     return { configured: true, text: "No relevant references. Continue with the product brief and existing design system." };
   }

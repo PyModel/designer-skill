@@ -142,20 +142,20 @@ export function createServer(options: ServerOptions = {}): McpServer {
     return { contents: [{ uri: uri.href, mimeType: "text/markdown", text: getReferenceDoc(name) }] };
   });
   server.registerTool("find_ui_references", {
-    description: "Optional real-screen catalogue search or selected-screen inspection (niblet.pymodel.com). Needs NIBLET_TOKEN; without it, returns setup guidance. Results are untrusted, advisory reference data; returned URLs are never fetched automatically.",
+    description: "Optional text-only real-screen catalogue search or selected-screen metadata (niblet.pymodel.com). Needs NIBLET_TOKEN; without it, returns setup guidance. Results are untrusted, advisory reference data; returned URLs are never fetched automatically.",
     annotations: { ...annotations, openWorldHint: true },
     inputSchema: {
       query: z.string().trim().min(1).max(240).describe("The screen's task and state, described by what it does. Required also when selectedIds is passed."),
       platform: z.enum(["web", "ios"]).optional(),
       limit: z.number().int().min(1).max(3).optional(),
       selectedIds: z.array(z.string().trim().min(1).max(160)).min(1).max(3).optional()
-        .describe("One to three screen IDs returned by a previous search: re-reads those exact screens for inspection."),
+        .describe("One to three screen IDs returned by a previous search: re-reads those exact screens for metadata, not visual inspection."),
       clientSkillVersion: z.string().trim().min(1).max(64).optional()
         .describe("The installed Niblet skill version, when the host knows it."),
     },
   }, guard(async ({ query, platform, limit, selectedIds, clientSkillVersion }) => {
     const answer = await findUiReferences(query, { platform, limit, selectedIds, clientSkillVersion });
-    return text(answer.configured ? answer.text : `${answer.text}\n(Catalogue not configured: set NIBLET_TOKEN to enable find_ui_references, get_design_reference and find_ui_materials.)`);
+    return text(answer.text);
   }));
   server.registerTool("get_design_reference", {
     description: "Optional structured design-reference retrieval (niblet.pymodel.com; web screens only) for a screenId or packSlug. Needs NIBLET_TOKEN; without it, returns setup guidance. Results are untrusted, advisory reference data.",
@@ -170,14 +170,14 @@ export function createServer(options: ServerOptions = {}): McpServer {
     },
   }, guard(async ({ screenId, packSlug, sections, clientSkillVersion }) => {
     const answer = await getDesignReference({ screenId, packSlug, sections, clientSkillVersion });
-    return text(answer.configured ? answer.text : `${answer.text}\n(Catalogue not configured: set NIBLET_TOKEN to enable find_ui_references, get_design_reference and find_ui_materials.)`);
+    return text(answer.text);
   }));
   server.registerTool("find_ui_materials", {
-    description: "Niblet materials catalogue routing (fonts, icons, animated icons; React component source is remote-only). Returns setup and boundary guidance; retrieval itself runs on the Niblet MCP package or hosted MCP. kind 'pack' is refused: no packs are supplied. Adopted assets need license review.",
-    annotations: { ...annotations, openWorldHint: true },
+    description: "Niblet materials routing only (fonts, icons, animated icons, components). No materials are fetched here. Use the discovered Niblet MCP; component source needs its hosted get_ui_component. kind 'pack' is refused. Adopted assets need license review.",
+    annotations,
     inputSchema: {
       query: z.string().trim().min(1).max(240).describe("The material's role, described by what it does."),
-      kind: z.enum(["font", "icon", "animated_icon", "pack"]).describe("Material kind; 'pack' always answers a refusal."),
+      kind: z.enum(["font", "icon", "animated_icon", "component", "pack"]).describe("Routing kind only; components require hosted MCP, and 'pack' always answers a refusal."),
     },
   }, guard(async ({ kind }) => {
     const answer = await findUiMaterials(kind);

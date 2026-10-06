@@ -36,9 +36,9 @@ Start with `get_preflight_brief`, then `load_project_context` using the actual *
 | `get_palette_seed` | Optional seed for an authorized new palette |
 | `detect_antipatterns` | Bounded static scan: coverage, per-file engine and gaps, file hashes; requires `cwd` and `target` |
 | `review_and_gate` | Static verification per required rule; requires `cwd` and `target` |
-| `find_ui_references` | Optional niblet catalogue search or selected-screen inspection (needs `NIBLET_TOKEN`); untrusted results, URLs never fetched automatically |
+| `find_ui_references` | Optional text-only Niblet catalogue search or selected-screen metadata (needs `NIBLET_TOKEN`); untrusted results, URLs never fetched automatically |
 | `get_design_reference` | Optional niblet structured reference for a web screen (needs `NIBLET_TOKEN`); untrusted results |
-| `find_ui_materials` | Niblet materials routing guidance (fonts, icons, animated icons); retrieval runs on the Niblet MCP package or hosted MCP; kind `pack` is refused |
+| `find_ui_materials` | Niblet materials routing guidance (fonts, icons, animated icons, components); no materials fetched here; retrieval runs on the Niblet MCP package or hosted MCP; kind `pack` is refused |
 <!-- tools:end -->
 
 **Resources:** `designer://skill` and `designer://reference/{+name}` (names include `ux/*`).
@@ -48,6 +48,10 @@ Start with `get_preflight_brief`, then `load_project_context` using the actual *
 A direction PASS validates input only; it does not persist approval or prevent writes through other tools. `review_and_gate` (result `schemaVersion: 3`) reports each required rule as `RAN`, `UNSUPPORTED`, `UNRESOLVED` or `WAIVED`, and `staticStatus: PASS | FAIL | INCOMPLETE`; overall `status` and `uiReadiness` are only ever `FAIL | NOT_VERIFIED`. A CSS- or component-only scan cannot evaluate contrast statically, so it is `INCOMPLETE`, not PASS. Rendered, functional and accessibility checks need separate evidence.
 
 Style rules are advisory unless adopted through `blockingRules`. Required rules can be waived only in the committed `.designer-skill/config.json`; the per-developer `config.local.json` cannot waive them and cannot use `ignoreFiles`. Empty, ignored-only or fully waived scans, invalid configuration and unsupported scope never become success. Semantics and bounds: [HARDENING.md](../docs/HARDENING.md).
+
+## Pairing with Niblet
+
+Prefer the separately connected Niblet MCP's server-qualified catalogue tools for images and materials; discover its schema before calling. This server's same-named tools are text/routing fallbacks, not proxies for Niblet's complete MCP. Setting `NIBLET_TOKEN` enables only screen/design-reference REST reads here; Niblet MCP requires its own host connection. Hosted `get_ui_component` supplies React source, but retrieval does not authorize source writes or dependency installation. Follow the bundled `niblet-catalogue` reference for licenses, target-path validation and bounded retrieval. Neither service certifies rendered quality.
 
 ## HTTP transport
 

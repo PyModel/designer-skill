@@ -21,6 +21,11 @@ function startStub(): Promise<void> {
       res.end("null");
       return;
     }
+    if (url.pathname === "/v1/search" && ["missing-results", "invalid-result"].includes(url.searchParams.get("q") ?? "")) {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(url.searchParams.get("q") === "missing-results" ? { error: "bad response" } : { results: [{ id: "a/b", app: "Invalid", platform: "web" }] }));
+      return;
+    }
     if (url.pathname === "/v1/search" && url.searchParams.get("q") === "not-found") {
       res.statusCode = 404;
       res.end("{}");
@@ -62,11 +67,21 @@ function startStub(): Promise<void> {
     }
     if (url.pathname === "/v1/screens/scr-001") {
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({
+      res.end(JSON.stringify({ screen: {
         id: "scr-001", app: "Acme Settings", platform: "web", screenType: "settings",
         summary: "Subscription status with renewal date and one primary action", width: 1440, height: 900,
         inspectUrl: "https://niblet.pymodel.com/scr-001-full.webp",
-      }));
+      }, siblings: [] }));
+      return;
+    }
+    if (url.pathname === "/v1/screens/scr-wrapped") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ screen: { id: "scr-wrapped", app: "Wrapped Settings", platform: "web", inspectUrl: "https://niblet.pymodel.com/media/screen.webp" }, siblings: [] }));
+      return;
+    }
+    if (url.pathname === "/v1/screens/scr-malformed") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ screen: null, siblings: [] }));
       return;
     }
     if (url.pathname.startsWith("/v1/screens/")) {
@@ -165,6 +180,18 @@ describe("niblet adapter — REST path against local stub", () => {
     expect(sent.searchParams.get("client")).toBe("designer-skill-mcp");
   });
 
+  it("reads the platform's screen envelope without promoting metadata to visual inspection", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    requests.length = 0;
+    const answer = await findUiReferences("settings", { selectedIds: ["scr-wrapped", "scr-malformed"] });
+    expect(answer.text).toContain("Wrapped Settings");
+    expect(answer.text).toContain("invalid screen response");
+    expect(answer.text).not.toContain('"siblings"');
+    expect(answer.text).not.toContain("Open a returned URL");
+    expect(requests.map(path => new URL(path, origin).pathname)).toEqual(["/v1/screens/scr-wrapped", "/v1/screens/scr-malformed"]);
+  });
+
   it("skips a screen the catalogue does not hold instead of failing", async () => {
     process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
     process.env.NIBLET_API_ORIGIN = origin;
@@ -255,6 +282,16 @@ describe("niblet adapter — REST path against local stub", () => {
     const answer = await getDesignReference({ screenId: "scr-none" });
     expect(answer.configured).toBe(true);
     expect(answer.text).toContain("no design reference for that screen or pack");
+  });
+
+  it("distinguishes malformed search payloads from an empty catalogue", async () => {
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
+    process.env.NIBLET_API_ORIGIN = origin;
+    for (const query of ["missing-results", "invalid-result"]) {
+      const answer = await findUiReferences(query);
+      expect(answer.text).toContain("invalid search response");
+      expect(answer.text).not.toContain("No relevant references");
+    }
   });
 
   it("reports a 404 from search as a failed request, not a missing reference", async () => {

@@ -50,6 +50,20 @@ describe("documentation matches the server", () => {
     }
   });
 
+  it("keeps the Niblet handoff optional, server-qualified and evidence-bound", () => {
+    const router = read("skills/designer-skill/SKILL.md");
+    const catalogue = read("skills/designer-skill/reference/niblet-catalogue.md");
+    const readme = read("README.md");
+    expect(router).toContain("server-qualified");
+    expect(router).toContain("grant no write/install authority");
+    expect(catalogue).toContain("files[].target");
+    expect(catalogue).toContain("escaping symlinks");
+    expect(readme).toContain("Never treat static success as UI PASS");
+    expect(readme).toContain("only if its tools were actually observed");
+    expect(readme).toContain("Persuade, Operate, Read, Experience");
+    expect(readme).toContain("audit, plan, refine, implement, system");
+  });
+
   it("keeps the Cursor rule on the live tool contract", async () => {
     const rule = read("rules/designer-skill-ui.mdc");
     const tools = await liveTools();
