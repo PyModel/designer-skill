@@ -21,6 +21,8 @@ import { convertDesignTokens } from "./tokens.js";
 import { verifyRendered } from "./rendered.js";
 
 export const SERVER_NAME = "designer-skill-mcp";
+/** Shown to people; the plugin manifests use the same words. Configs key the server as `designer-skill`. */
+export const SERVER_TITLE = "Designer Skill";
 export const SERVER_VERSION = pkg.version;
 export const SERVER_INSTRUCTIONS = [
   "For UI tasks, call get_preflight_brief then load_project_context with the actual project root.",
@@ -121,7 +123,7 @@ function scanHooks(extra: ToolExtra): { signal?: AbortSignal; onProgress?: (file
 }
 
 export function createServer(options: ServerOptions = {}): McpServer {
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions: SERVER_INSTRUCTIONS });
+  const server = new McpServer({ name: SERVER_NAME, title: SERVER_TITLE, version: SERVER_VERSION }, { instructions: SERVER_INSTRUCTIONS });
   // The SDK reports schema violations and unknown tools through this private hook as bare text.
   // Re-shape them so every tool error is {code, message}; test/tool-errors.test.ts fails if the hook moves.
   (server as unknown as { createToolError: (message: string) => CallToolResult }).createToolError = (message) =>

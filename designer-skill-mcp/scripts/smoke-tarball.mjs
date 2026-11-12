@@ -59,6 +59,7 @@ try {
     stderr: 'inherit',
   }));
 
+  assert.deepEqual([client.getServerVersion().name, client.getServerVersion().title], ['designer-skill-mcp', 'Designer Skill']);
   const tools = (await client.listTools()).tools.map((t) => t.name);
   assert.equal(tools.length, 18, `expected 18 tools, got ${tools.length}: ${tools.join(', ')}`);
 
