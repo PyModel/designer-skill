@@ -63,7 +63,7 @@ Standalone MCP config (the plugin's own [`mcp.json`](mcp.json) pins the release 
 { "mcpServers": { "designer-skill": { "command": "npx", "args": ["-y", "@pymodel/designer-skill-mcp@latest"] } } }
 ```
 
-`@latest` tracks npm; teams pin `@pymodel/designer-skill-mcp@0.22.0`. Plugin skill content updates separately (`/plugin update …`). MCP registry name: `io.github.PyModel/designer-skill-mcp`. Requires Node 22+.
+`@latest` tracks npm; teams pin `@pymodel/designer-skill-mcp@0.23.0`. Plugin skill content updates separately (`/plugin update …`). MCP registry name: `io.github.PyModel/designer-skill-mcp`. Requires Node 22+.
 
 <details>
 <summary><strong>Per-client config</strong> (VS Code, Codex TOML, Kilo, Open Code, Claude Desktop, Pythinker, Pi)</summary>
