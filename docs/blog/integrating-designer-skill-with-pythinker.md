@@ -117,7 +117,7 @@ No `env` block is needed. Save, then restart Pythinker or run `/mcp reconnect`.
 - `toolTimeout` (optional) is the per-call timeout in seconds.
 - `enabledTools` (optional) limits which tools are registered; `["*"]` registers all of them.
 
-**Pin a version:** replace the package with `@pymodel/designer-skill-mcp@0.24.0` so the server doesn't change under you.
+**Pin a version:** replace the package with `@pymodel/designer-skill-mcp@0.25.0` so the server doesn't change under you.
 
 **Run from a local checkout:** clone [PyModel/designer-skill](https://github.com/PyModel/designer-skill), run `npm ci && npm run build` inside `designer-skill-mcp/`, then set `"command": "node"` and `"args": ["/abs/path/to/designer-skill-mcp/dist/index.js"]`.
 
