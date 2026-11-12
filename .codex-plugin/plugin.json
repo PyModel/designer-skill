@@ -38,6 +38,9 @@
     "websiteURL": "https://github.com/PyModel/designer-skill",
     "privacyPolicyURL": "https://github.com/PyModel/designer-skill/blob/main/PRIVACY.md",
     "termsOfServiceURL": "https://github.com/PyModel/designer-skill/blob/main/LICENSE",
-    "logo": "./assets/icon.webp"
+    "logo": "./assets/icon.webp",
+    "screenshots": [
+      "./assets/review-and-gate.png"
+    ]
   }
 }
