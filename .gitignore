@@ -12,3 +12,7 @@ blackbox/
 
 # Local agent tooling state
 .claude/autoharness/
+# autoharness bookkeeping beside project skills
+.claude/skills/**/.sidecar.json
+.claude/skills/**/.ledger.jsonl
+.claude/skills/**/references/evidence-*.md

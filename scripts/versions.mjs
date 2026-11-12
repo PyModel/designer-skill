@@ -33,7 +33,7 @@ const JSON_TARGETS = [
   ['.cursor-plugin/plugin.json', (j) => [j.version], (j, v) => { j.version = v; }],
 ];
 // Files that must pin the exact release (at least one pin each).
-const PIN_TARGETS = ['mcp.json', 'README.md', 'commands/designer-setup.md'];
+const PIN_TARGETS = ['mcp.json', 'README.md', 'commands/designer-setup.md', 'docs/blog/integrating-designer-skill-with-pythinker.md'];
 
 function check() {
   const expected = readJson(PKG).version;
