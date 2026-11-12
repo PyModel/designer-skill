@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { pathToFileURL } from "node:url";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -16,7 +14,7 @@ async function connect(options: ServerOptions = {}, clientRoots?: string[]) {
   const client = new Client({ name: "test-client", version: "0.0.0" }, clientRoots ? { capabilities: { roots: {} } } : {});
   if (clientRoots) {
     // Paths become file: URIs; anything already carrying a scheme is passed through as-is.
-    client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots: clientRoots.map((r) => ({ uri: /^[a-z]+:/.test(r) ? r : pathToFileURL(r).href })) }));
+    client.setRequestHandler('roots/list', async () => ({ roots: clientRoots.map((r) => ({ uri: /^[a-z]+:/.test(r) ? r : pathToFileURL(r).href })) }));
   }
   cleanup.push(() => server.close(), () => client.close());
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

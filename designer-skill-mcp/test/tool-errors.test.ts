@@ -1,8 +1,7 @@
 // Every tool reports a thrown error in the failure() JSON shape, including
 // tools whose handlers have no error handling of their own.
 import { describe, expect, it, vi } from "vitest";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { createServer } from "../src/server.js";
 
 vi.mock("../src/niblet.js", async (original) => ({
@@ -36,7 +35,7 @@ describe("tool error shape", () => {
 
   // Schema violations are raised by the SDK before a handler runs; createServer re-shapes them
   // through a private SDK hook. If an SDK upgrade moves that hook, this test is what notices.
-  it("reports schema violations and unknown tools in the same JSON shape", async () => {
+  it("reports schema violations in the same JSON shape and unknown tools as a protocol error", async () => {
     const server = createServer();
     const client = new Client({ name: "errors", version: "0" });
     const [a, b] = InMemoryTransport.createLinkedPair();
@@ -46,8 +45,8 @@ describe("tool error shape", () => {
     const body = JSON.parse((invalid.content as Array<{ text: string }>)[0].text);
     expect(body.code).toBe("INPUT_INVALID");
     expect(body.message).toContain("designRead");
-    const unknown = await client.callTool({ name: "no_such_tool", arguments: {} });
-    expect(JSON.parse((unknown.content as Array<{ text: string }>)[0].text).code).toBe("OPERATION_FAILED");
+    // A tool that does not exist is a protocol error (JSON-RPC -32602), not a tool result.
+    await expect(client.callTool({ name: "no_such_tool", arguments: {} })).rejects.toMatchObject({ code: -32602, message: expect.stringContaining("no_such_tool") });
     await client.close(); await server.close();
   });
 });

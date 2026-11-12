@@ -6,8 +6,8 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import express from "express";
 import { z } from "zod";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { McpServer } from "@modelcontextprotocol/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { callNiblet, nibletConfigured, nibletPolicy, resetNibletCircuit } from "../src/niblet.js";
 
@@ -25,15 +25,15 @@ let misbehave: "hang" | "bad-json" | null = null;
 
 function fakeNiblet(): McpServer {
   const server = new McpServer({ name: "fake-niblet", version: "0" });
-  server.registerTool("find_ui_references", { inputSchema: { query: z.string(), limit: z.number().optional() } }, async (args) => {
+  server.registerTool("find_ui_references", { inputSchema: z.object({ query: z.string(), limit: z.number().optional() }) }, async (args) => {
     served.push({ tool: "find_ui_references", args });
     return { content: [{ type: "text", text: "1. Acme Settings — settings (web) id=scr-001" }, { type: "image", data: PNG, mimeType: "image/png" }] };
   });
-  server.registerTool("get_design_reference", { inputSchema: { screenId: z.string().optional() } }, async (args) => {
+  server.registerTool("get_design_reference", { inputSchema: z.object({ screenId: z.string().optional() }) }, async (args) => {
     served.push({ tool: "get_design_reference", args });
     return { isError: true, content: [{ type: "text", text: "only web screens have one" }] };
   });
-  server.registerTool("find_ui_materials", { inputSchema: { query: z.string(), kind: z.string() } }, async (args) => {
+  server.registerTool("find_ui_materials", { inputSchema: z.object({ query: z.string(), kind: z.string() }) }, async (args) => {
     served.push({ tool: "find_ui_materials", args });
     return { content: [{ type: "text", text: "x".repeat(25_000) }] };
   });
@@ -51,7 +51,7 @@ beforeAll(async () => {
     if (req.body?.method === "tools/call" && misbehave === "hang") return; // never answers
     if (req.body?.method === "tools/call" && misbehave === "bad-json") { res.status(200).type("application/json").send("{not json"); return; }
     const server = fakeNiblet();
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => { void transport.close(); void server.close(); });
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);

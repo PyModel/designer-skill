@@ -7,8 +7,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { hostHeaderValidation } from "@modelcontextprotocol/sdk/server/middleware/hostHeaderValidation.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { NodeStreamableHTTPServerTransport } from "@modelcontextprotocol/node";
+import { hostHeaderValidation } from "@modelcontextprotocol/express";
 import { createServer } from "../server.js";
 import { projectRoot } from "../scope.js";
 
@@ -86,7 +86,7 @@ export async function runHttp(options: HttpOptions): Promise<Server> {
   app.post("/mcp", async (req: Request, res: Response) => {
     try {
       const server = createServer({ allowedRoots: roots });
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => {
         void transport.close();
         void server.close();
