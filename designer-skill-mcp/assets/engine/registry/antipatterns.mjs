@@ -160,7 +160,7 @@ const ANTIPATTERNS = [
     category: 'slop',
     name: 'Em-dash overuse',
     description:
-      'More than two em-dashes (— or --) in body copy is an AI cadence tell. Use commas, colons, periods, or parentheses instead.',
+      'Five or more em-dashes (— or --) in body copy is an AI cadence tell. Use commas, colons, periods, or parentheses instead.',
     skillSection: 'Copy',
     skillGuideline: 'no em dashes',
   },
@@ -458,6 +458,9 @@ const RENDERED_ONLY_RULES = ['text-overflow', 'line-length', 'body-text-viewport
 function staticRuleCoverage(ruleId, file, designSystemStatus) {
   const support = STATIC_RULE_SUPPORT[file.engine];
   if (!support) return { status: 'UNSUPPORTED', reason: `no static engine for ${file.engine}` };
+  // filterByProviders drops every finding of a gated rule; the MCP enables no provider.
+  const gated = getAntipattern(ruleId)?.gated;
+  if (gated) return { status: 'UNSUPPORTED', reason: `rule is gated behind the "${gated}" provider, which is not enabled` };
   if (support.design.includes(ruleId)) {
     if (designSystemStatus === 'invalid') return { status: 'UNRESOLVED', reason: 'DESIGN.md is invalid' };
     if (designSystemStatus !== 'loaded') return { status: 'UNSUPPORTED', reason: 'no DESIGN.md tokens' };

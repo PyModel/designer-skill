@@ -69,7 +69,7 @@ describe("documentation matches the server", () => {
     const tools = await liveTools();
     const names = new Set(tools.map((t) => t.name));
     for (const [, name] of rule.matchAll(/`([a-z]+_[a-z_]+)`/g)) expect(names, name).toContain(name);
-    const direction = tools.find((t) => t.name === "commit_design_direction")!;
+    const direction = tools.find((t) => t.name === "validate_design_direction")!;
     for (const field of direction.inputSchema.required ?? []) expect(rule, `required field ${field}`).toContain(`\`${field}\``);
   });
 });

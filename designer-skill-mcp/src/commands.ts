@@ -68,6 +68,6 @@ export function formatCommandHelp(verb: string): string {
   const { canonical, alias } = resolveCommandVerb(verb);
   const meta = getCommandMetadata()[canonical];
   return [`# designer-skill command: ${canonical}`, alias ? `${alias} is an alias for ${canonical}.` : "",
-    meta.description, meta.argumentHint, `Read before acting: ${meta.reads.map((r) => `reference/${r}.md`).join(", ")}`,
+    meta.description, meta.argumentHint, `Read before acting (get_reference names; files are reference/<name>.md in a skill install): ${meta.reads.join(", ")}`,
     "Preserve user scope. Static review_and_gate results do not certify rendered UI readiness."].filter(Boolean).join("\n\n");
 }

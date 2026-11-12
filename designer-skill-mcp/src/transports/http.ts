@@ -42,12 +42,33 @@ function bearerAuth(token: string) {
   };
 }
 
-export function assertHttpExposure({ host, roots, token }: Pick<HttpOptions, "host" | "roots" | "token">): void {
+/**
+ * Browsers send Origin; other clients do not. A present Origin must name an
+ * accepted host, else 403 (MCP Streamable HTTP: servers MUST validate Origin).
+ */
+function originValidation(hostnames: readonly string[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const origin = req.headers.origin;
+    if (origin === undefined) { next(); return; }
+    let hostname: string | null = null;
+    try { hostname = new URL(origin).hostname; } catch { /* "null" and malformed origins are refused below */ }
+    if (hostname === null || !hostnames.includes(hostname)) {
+      jsonRpcError(res, 403, -32000, "Forbidden: Origin is not an accepted host.");
+      return;
+    }
+    next();
+  };
+}
+
+export function assertHttpExposure({ host, roots, token, allowedHosts }: Pick<HttpOptions, "host" | "roots" | "token"> & { allowedHosts?: string[] }): void {
   if (!roots.length) {
     throw new Error(`HTTP mode requires at least one --root: every local process and OS user can reach ${host}, so the readable project directories must be explicit.`);
   }
   if (LOOPBACK_HOSTS.includes(host)) return;
   if (!token) throw new Error(`Binding ${host} exposes the server beyond this machine: set DESIGNER_SKILL_HTTP_TOKEN (clients send it as a Bearer token).`);
+  if (allowedHosts && !allowedHosts.length) {
+    throw new Error(`Binding ${host} needs at least one --allowed-host: without it no Host header could be validated (DNS-rebinding protection).`);
+  }
 }
 
 export async function runHttp(options: HttpOptions): Promise<Server> {
@@ -57,7 +78,8 @@ export async function runHttp(options: HttpOptions): Promise<Server> {
   const app = express();
   // --allowed-host adds names; a loopback bind always keeps its own.
   const hostnames = [...(LOOPBACK_HOSTS.includes(options.host) ? LOOPBACK_HOSTNAMES : []), ...options.allowedHosts];
-  if (hostnames.length) app.use(hostHeaderValidation(hostnames));
+  app.use(hostHeaderValidation(hostnames));
+  app.use(originValidation(hostnames));
   if (options.token) app.use(bearerAuth(options.token));
   app.use(express.json());
 

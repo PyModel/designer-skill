@@ -63,7 +63,8 @@ async function runScan(job) {
       ? await detectHtml(file.rel, { ...options, content: file.text })
       : detectText(file.text, file.rel, options);
     const importedBy = importers.get(path.join(root, file.rel));
-    for (const finding of result.findings) {
+    // Ignored rules and values are dropped before the findings bound is counted.
+    for (const finding of filterDetectionFindings(result.findings, policy)) {
       findings.push(importedBy ? { ...finding, importedBy } : finding);
     }
     if (findings.length > limits.maxFindings) {
@@ -75,7 +76,7 @@ async function runScan(job) {
   }
 
   return {
-    findings: filterDetectionFindings(findings, policy),
+    findings,
     fileMeta,
     files: scanFs.evidence(),
     bytesScanned,

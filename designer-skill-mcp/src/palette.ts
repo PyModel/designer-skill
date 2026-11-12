@@ -26,7 +26,7 @@ export async function getPaletteSeed(options: { id?: string; from?: string } = {
     return mod.renderPalette(options).trim();
   } catch (error) {
     if ((error as { code?: string }).code === "UNKNOWN_SEED") {
-      throw new DesignError("UNKNOWN_SEED", (error as Error).message, { knownIds: mod.SEED_IDS.length });
+      throw new DesignError("UNKNOWN_SEED", (error as Error).message, { knownIds: mod.SEED_IDS.length, ids: [...mod.SEED_IDS] });
     }
     throw error;
   }

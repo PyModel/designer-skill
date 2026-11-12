@@ -9,7 +9,7 @@ export const REFERENCE_NAMES = [
   "avoid-ai-slop", "differentiation-playbook", "refactor-and-redesign", "command-playbook",
   "interaction-design", "visual-critique", "design-systems", "project-init", "craft-flow", "live-mode", "css-techniques",
   "verification-and-recovery", "niblet-catalogue", "motion-vocabulary", "fluid-input-principles",
-  "native-web", "worst-case-data", "variant-prototyping", "dependency-selection", "craft-provenance",
+  "native-web", "worst-case-data", "variant-prototyping", "dependency-selection", "craft-provenance", "native-platforms",
 ] as const;
 export type ReferenceName = (typeof REFERENCE_NAMES)[number];
 export const REFERENCE_DESCRIPTIONS: Record<ReferenceName, string> = {
@@ -37,6 +37,7 @@ export const REFERENCE_DESCRIPTIONS: Record<ReferenceName, string> = {
   "variant-prototyping": "Compare competing directions on a named axis, isolated from production.",
   "dependency-selection": "Task-first UI dependency method: existing assets, one reasoned recommendation.",
   "craft-provenance": "On-demand historical capability mapping and source attribution.",
+  "native-platforms": "iOS, Android and desktop native UI: system components, text scaling, semantic color, device checks.",
 };
 
 // ux-designer reference files, namespaced under "ux/" and vendored inside this

@@ -76,7 +76,8 @@ Flags:
                          Without it, stdio clients' MCP roots are honored when declared.
   --port <n>, --port=<n> HTTP port (default 3017, or PORT)
   --host <addr>          HTTP bind address (default 127.0.0.1). HTTP mode requires at least
-                         one --root; a non-loopback address also requires DESIGNER_SKILL_HTTP_TOKEN.
+                         one --root; a non-loopback address also requires DESIGNER_SKILL_HTTP_TOKEN
+                         and at least one --allowed-host.
   --allowed-host <name>  Extra hostname (no port) accepted in the Host header (repeatable);
                          a loopback bind always accepts its own loopback names
   --version, -v          Print version and exit
@@ -87,4 +88,11 @@ Flags:
 Environment:
   DESIGNER_SKILL_HTTP_TOKEN        Bearer token required on every HTTP request when set
   DESIGNER_SKILL_SCAN_TIMEOUT_MS   Per-scan deadline in ms (default 60000)
+  DESIGNER_SKILL_CONTEXT_DIR       Directory searched first for PRODUCT.md and DESIGN.md
+  NIBLET_TOKEN                     Optional Niblet catalogue key (niblet_at_...). Get one at
+                                   https://niblet.pymodel.com/account for real-screen references,
+                                   licensed materials and component source. Unset: those four
+                                   tools answer setup guidance; everything else works.
+  NIBLET_DISABLED                  1 turns the catalogue tools off
+  NIBLET_API_ORIGIN                Catalogue origin override (https, bare origin)
 `;

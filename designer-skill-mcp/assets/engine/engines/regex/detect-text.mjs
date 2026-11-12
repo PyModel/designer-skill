@@ -81,6 +81,8 @@ function hasBoundImageSource(tag) {
   return /\{/.test(tag) || /\[\s*(?:attr\.)?src\s*\]/i.test(tag) || /\bv-bind\s*=/i.test(tag) || /\bv-bind:src\b/i.test(tag);
 }
 
+const IMG_TAG = /<img\b(?:[^>"']|"[^"]*"|'[^']*'){0,4000}>/gi;
+
 const REGEX_MATCHERS = [
   // --- Side-tab ---
   { id: 'side-tab', regex: /\bborder-[lrse]-(\d+)\b/g,
@@ -138,7 +140,8 @@ const REGEX_MATCHERS = [
   { id: 'bounce-easing', regex: /\banimate-bounce\b/g,
     test: () => true,
     fmt: () => 'animate-bounce (Tailwind)' },
-  { id: 'bounce-easing', regex: /animation(?:-name)?\s*:\s*([^;{}]*(?:bounce|elastic|wobble|jiggle|spring)[^;{}]*)/gi,
+  // Bounded runs: unbounded [^;{}]* around the alternation is quadratic on long declarations.
+  { id: 'bounce-easing', regex: /animation(?:-name)?\s*:\s*([^;{}]{0,300}?(?:bounce|elastic|wobble|jiggle|spring)[^;{}]{0,300})/gi,
     test: () => true,
     fmt: (m) => {
       const token = m[1]
@@ -174,14 +177,16 @@ const REGEX_MATCHERS = [
       return `transition-property: ${found ? found.join(', ') : m[1].trim()}`;
     } },
   // --- Broken image: src="" or src="#" or src=" " ---
-  { id: 'broken-image', regex: /<img\b[^>]{0,4000}?\bsrc\s*=\s*(?:""|''|"\s+"|'\s+'|"#"|'#')/gi,
-    test: () => true,
+  // IMG_TAG reads one whole tag, quoted attribute values included, so a ">" inside
+  // alt="…" does not end it; (?<![\w-]) keeps data-src and similar from counting as src.
+  { id: 'broken-image', regex: IMG_TAG,
+    test: (m) => /(?<![\w-])src\s*=\s*(?:""|''|"\s+"|'\s+'|"#"|'#')/i.test(m[0]),
     fmt: (m) => m[0].slice(0, 100) },
   // --- Broken image: <img> with no src attribute at all ---
   // Component syntax binds src without a literal `src=`: Svelte `{src}`,
   // JSX `{...props}`, Angular `[src]`/`[attr.src]`, Vue `v-bind="obj"`.
-  { id: 'broken-image', regex: /<img\b[^>]{0,4000}>/gi,
-    test: (m) => !/\bsrc\s*=/i.test(m[0]) && !hasBoundImageSource(m[0]),
+  { id: 'broken-image', regex: IMG_TAG,
+    test: (m) => !/(?<![\w-])src(?:set)?\s*=/i.test(m[0]) && !hasBoundImageSource(m[0]),
     fmt: (m) => m[0].slice(0, 100) },
 ];
 

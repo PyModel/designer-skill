@@ -8,6 +8,15 @@ const SAFE_TAGS = new Set([
   'rect', 'line', 'polyline', 'polygon', 'g', 'defs', 'use',
 ]);
 
+// Tags whose own text the contrast rule does not judge: no rendered text,
+// user-entered text, or syntax-highlighted code. Every other element's direct
+// text is checked against the surface behind it, inline elements included.
+const CONTRAST_SKIP_TAGS = new Set([
+  'input', 'textarea', 'select', 'option', 'pre', 'code', 'hr', 'html', 'head', 'script', 'style',
+  'link', 'meta', 'title', 'br', 'img', 'svg', 'path', 'circle',
+  'rect', 'line', 'polyline', 'polygon', 'g', 'defs', 'use',
+]);
+
 // Per-check safe-tags override for the border (side-tab / border-accent)
 // rule. We intentionally re-allow <label> here because card-shaped clickable
 // labels (e.g. .checklist-item wrapping a checkbox + content) are one of the
@@ -87,6 +96,7 @@ const KNOWN_SERIF_FONTS = new Set([
 
 export {
   SAFE_TAGS,
+  CONTRAST_SKIP_TAGS,
   BORDER_SAFE_TAGS,
   OVERUSED_FONTS,
   GOOGLE_DOMAINS,

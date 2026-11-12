@@ -62,7 +62,10 @@ export function commitDesignDirection(input: DesignDirectionInput): DesignDirect
     if (!direction.typographyDirection) fixes.push("typographyDirection must state the approved type approach.");
     if (!layouts.length || new Set(layouts).size !== layouts.length) fixes.push("layoutFamilies must contain distinct applicable patterns.");
   }
-  if (fixes.length) return { status: "FAIL", scope: "input-validation", message: "Direction input is incomplete or invalid.", fixes };
+  if (fixes.length) {
+    fixes.push('For a bounded fix that keeps the existing identity, pass mode "preserve" instead: it needs none of these.');
+    return { status: "FAIL", scope: "input-validation", message: "Direction input is incomplete or invalid.", fixes };
+  }
   const record = { ...direction, layoutFamilies: layouts };
   return {
     status: "PASS", scope: "input-validation",
@@ -72,6 +75,6 @@ export function commitDesignDirection(input: DesignDirectionInput): DesignDirect
 }
 
 export function formatDesignDirectionResult(result: DesignDirectionResult): string {
-  if (result.status === "FAIL") return `## commit_design_direction: FAIL\n\n${result.message}\n\n${result.fixes!.map((f) => `- ${f}`).join("\n")}`;
-  return `## commit_design_direction: PASS\n\n${result.message}\n\ndirectionId: ${result.directionId}`;
+  if (result.status === "FAIL") return `## validate_design_direction: FAIL\n\n${result.message}\n\n${result.fixes!.map((f) => `- ${f}`).join("\n")}`;
+  return `## validate_design_direction: PASS\n\n${result.message}\n\ndirectionId: ${result.directionId}`;
 }

@@ -1,6 +1,6 @@
 # Designer behavioral evaluations
 
-These ten fixed cases test an agent's **proposed action decisions**: read-only planning/audits, bounded repairs, preserved identity, filesystem-only routing, missing renderer, unknown commands, retrieved injection, truthful content, delegated direction and preview without helpers.
+These eleven fixed cases test an agent's **proposed action decisions**: read-only planning/audits, bounded repairs, preserved identity, filesystem-only routing, missing renderer, unknown commands, retrieved injection, truthful content, delegated direction, preview without helpers, and continuing when the optional Niblet catalogue is not configured.
 
 They do not execute generated code or certify UI quality. A passing model proposal does not prove its later tool calls will comply. The unit suite deliberately uses synthetic responses to test the grader, never as evidence of a model pass rate.
 

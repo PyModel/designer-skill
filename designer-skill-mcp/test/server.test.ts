@@ -57,23 +57,28 @@ describe("intent routing regressions", () => {
 });
 
 describe("MCP contract", () => {
-  it("advertises the fifteen supported tools and gate output schema", async () => {
+  it("advertises the eighteen supported tools and gate output schema", async () => {
     const tools = (await (await connect()).listTools()).tools;
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "anti_slop_checklist", "commit_design_direction", "detect_antipatterns", "dispatch_intent", "find_ui_materials", "find_ui_references",
-      "get_command", "get_design_reference", "get_design_system", "get_palette_seed", "get_preflight_brief",
-      "get_reference", "list_commands", "load_project_context", "review_and_gate",
+      "check_contrast", "convert_design_tokens", "validate_design_direction", "detect_antipatterns", "dispatch_intent",
+      "find_ui_materials", "find_ui_references", "get_command", "get_design_reference", "get_skill_contract", "get_palette_seed",
+      "get_preflight_brief", "get_reference", "get_ui_component", "list_commands", "load_project_context", "review_and_gate", "verify_rendered",
     ].sort());
+    // Every tool states its title and its read-only, non-destructive nature explicitly (spec defaults are the opposite).
+    for (const t of tools) expect(t.annotations, t.name).toMatchObject({ title: expect.any(String), readOnlyHint: t.name !== "verify_rendered", destructiveHint: false });
+    const hint = (name: string) => tools.find((t) => t.name === name)!.annotations!.idempotentHint;
+    expect([hint("get_palette_seed"), hint("verify_rendered"), hint("check_contrast")]).toEqual([false, false, true]);
     expect(tools.find((t) => t.name === "review_and_gate")?.outputSchema).toBeDefined();
   });
-  it("keeps the remote-only component tool unregistered, like Niblet's own local adapter", async () => {
+  // Until 0.23 this server wrapped Niblet's REST API and could not serve components; it now bridges the hosted MCP, which can.
+  it("passes Niblet's four catalogue tools through, component source included", async () => {
     const names = (await (await connect()).listTools()).tools.map((t) => t.name);
-    expect(names).not.toContain("get_ui_component");
+    for (const name of ["find_ui_references", "get_design_reference", "find_ui_materials", "get_ui_component"]) expect(names).toContain(name);
   });
   it("keeps instructions compact and context first", async () => {
     expect(SERVER_INSTRUCTIONS.length).toBeLessThan(700);
     const result = textOf(await (await connect()).callTool({ name: "get_preflight_brief" }));
-    expect(result.indexOf("load_project_context")).toBeLessThan(result.indexOf("commit_design_direction"));
+    expect(result.indexOf("load_project_context")).toBeLessThan(result.indexOf("validate_design_direction"));
   });
   it("returns structured dispatch and valid CSS command guidance", async () => {
     const client = await connect();
@@ -108,18 +113,17 @@ describe("MCP contract", () => {
     expect((await call({ query: "ok", selectedIds: ["id".repeat(80) + "x"] })).isError).toBe(true); // >160 chars
     expect((await call({ query: "ok", clientSkillVersion: "v".repeat(65) })).isError).toBe(true);
   });
-  it("routes find_ui_materials to boundary guidance and refuses packs without NIBLET_TOKEN", async () => {
+  it("answers catalogue tools with setup guidance and refuses packs without NIBLET_TOKEN", async () => {
     const saved = process.env.NIBLET_TOKEN;
     delete process.env.NIBLET_TOKEN;
     cleanup.push(() => { if (saved !== undefined) process.env.NIBLET_TOKEN = saved; });
     const client = await connect();
     const materials = textOf(await client.callTool({ name: "find_ui_materials", arguments: { query: "outlined navigation icons", kind: "icon" } }));
     expect(materials).toContain("NIBLET_TOKEN");
-    expect(materials).toContain("remote-only");
-    expect(materials).toContain("license");
-    const component = textOf(await client.callTool({ name: "find_ui_materials", arguments: { query: "accessible disclosure", kind: "component" } }));
-    expect(component).toContain("get_ui_component");
-    expect(component).toContain("remote-only");
+    expect(materials).toContain("niblet.pymodel.com");
+    expect(materials).toContain("the catalogue is optional");
+    const component = await client.callTool({ name: "get_ui_component", arguments: { id: "accordion" } });
+    expect(component.isError).not.toBe(true); // an unconfigured catalogue is guidance, never an error
     const references = textOf(await client.callTool({ name: "find_ui_references", arguments: { query: "settings" } }));
     expect(references).not.toContain("enable find_ui_references, get_design_reference and find_ui_materials");
     const refusal = textOf(await client.callTool({ name: "find_ui_materials", arguments: { query: "icons", kind: "pack" } }));
@@ -141,7 +145,7 @@ describe("MCP contract", () => {
   it("reports empty scan failure as structured evidence", async () => {
     const result = await (await connect()).callTool({ name: "review_and_gate", arguments: { cwd: workspace(), target: "." } });
     expect(result.isError).not.toBe(true);
-    expect(result.structuredContent).toMatchObject({ schemaVersion: 3, code: "NO_SCAN_COVERAGE", staticStatus: "FAIL", status: "FAIL" });
+    expect(result.structuredContent).toMatchObject({ schemaVersion: 4, code: "NO_SCAN_COVERAGE", staticStatus: "FAIL", status: "FAIL" });
   });
   it("reports findings with positive line numbers and structured errors with codes", async () => {
     const cwd = workspace();
@@ -179,7 +183,7 @@ describe("MCP contract", () => {
     expect((await client.listTools()).tools.length).toBeGreaterThan(0);
   });
   it("validates preservation without requiring an invented aesthetic", async () => {
-    const result = await (await connect()).callTool({ name: "commit_design_direction", arguments: {
+    const result = await (await connect()).callTool({ name: "validate_design_direction", arguments: {
       mode: "preserve", register: "product", designRead: "Repair existing account form spacing without changing identity.", contextSources: ["src/form.css"],
     } });
     expect(result.structuredContent).toMatchObject({ status: "PASS", scope: "input-validation" });
@@ -221,7 +225,7 @@ describe("MCP contract", () => {
   it("retains palette and router discovery", async () => {
     const client = await connect();
     expect(textOf(await client.callTool({ name: "get_palette_seed", arguments: { from: "test-brand" } })).toLowerCase()).toContain("oklch");
-    expect(textOf(await client.callTool({ name: "get_design_system" }))).toContain("Overview & Execution Contract");
+    expect(textOf(await client.callTool({ name: "get_skill_contract" }))).toContain("Overview & Execution Contract");
   });
 });
 

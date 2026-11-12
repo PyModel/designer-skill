@@ -20,7 +20,9 @@ const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8',
 
 let client;
 try {
-  const [packed] = JSON.parse(run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], pkgDir));
+  // npm <= 11 prints an array of packed packages; npm 12 prints an object keyed by package name.
+  const packOutput = JSON.parse(run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', temporary], pkgDir));
+  const [packed] = Array.isArray(packOutput) ? packOutput : Object.values(packOutput);
   assert(packed && !isAbsolute(packed.filename) && !/[\\/]/.test(packed.filename), 'npm pack produced one local tarball');
   const shipped = new Set(packed.files.map((f) => f.path));
   for (const required of ['dist/index.js', 'assets/engine/node/scan-worker.mjs', 'assets/engine/registry/antipatterns.mjs',
@@ -58,11 +60,11 @@ try {
   }));
 
   const tools = (await client.listTools()).tools.map((t) => t.name);
-  assert.equal(tools.length, 15, `expected 15 tools, got ${tools.length}: ${tools.join(', ')}`);
+  assert.equal(tools.length, 18, `expected 18 tools, got ${tools.length}: ${tools.join(', ')}`);
 
   const gate = await client.callTool({ name: 'review_and_gate', arguments: { cwd: project, target: '.' } });
   assert.notEqual(gate.isError, true, JSON.stringify(gate.content));
-  assert.equal(gate.structuredContent.schemaVersion, 3);
+  assert.equal(gate.structuredContent.schemaVersion, 4);
   assert.equal(gate.structuredContent.code, 'STATIC_FINDINGS');
   const finding = gate.structuredContent.findings.find((f) => f.antipattern === 'low-contrast');
   assert(finding && finding.line === 2, 'static-html engine ran from the installed tarball (low-contrast at line 2)');

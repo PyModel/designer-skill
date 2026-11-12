@@ -7,8 +7,7 @@ import { createServer } from "../src/server.js";
 
 vi.mock("../src/niblet.js", async (original) => ({
   ...await original<typeof import("../src/niblet.js")>(),
-  findUiReferences: () => { throw new TypeError("catalogue exploded"); },
-  getDesignReference: () => { throw new TypeError("catalogue exploded"); },
+  callNiblet: () => { throw new TypeError("catalogue exploded"); },
 }));
 vi.mock("../src/commands.js", async (original) => ({
   ...await original<typeof import("../src/commands.js")>(),
@@ -32,6 +31,23 @@ describe("tool error shape", () => {
       const [block] = result.content as Array<{ text: string }>;
       expect(JSON.parse(block.text), name).toEqual({ code: "OPERATION_FAILED", message });
     }
+    await client.close(); await server.close();
+  });
+
+  // Schema violations are raised by the SDK before a handler runs; createServer re-shapes them
+  // through a private SDK hook. If an SDK upgrade moves that hook, this test is what notices.
+  it("reports schema violations and unknown tools in the same JSON shape", async () => {
+    const server = createServer();
+    const client = new Client({ name: "errors", version: "0" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(b), client.connect(a)]);
+    const invalid = await client.callTool({ name: "validate_design_direction", arguments: { register: "product", designRead: "short", contextSources: ["a.css"] } });
+    expect(invalid.isError).toBe(true);
+    const body = JSON.parse((invalid.content as Array<{ text: string }>)[0].text);
+    expect(body.code).toBe("INPUT_INVALID");
+    expect(body.message).toContain("designRead");
+    const unknown = await client.callTool({ name: "no_such_tool", arguments: {} });
+    expect(JSON.parse((unknown.content as Array<{ text: string }>)[0].text).code).toBe("OPERATION_FAILED");
     await client.close(); await server.close();
   });
 });

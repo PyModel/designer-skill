@@ -33,7 +33,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Build leaves committed assets unchanged
-        run: git diff --exit-code -- assets/
+        run: git diff --exit-code -- assets/ ../skills/
       - run: node --test checks/core.mjs
       - run: npm run typecheck
       - run: npm test

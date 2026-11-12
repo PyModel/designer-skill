@@ -28,14 +28,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
 
-      - name: Tag matches every version
+      - name: Tag matches every version and sits on main
         env:
           TAG: ${{ github.ref_name }}
         run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
           node scripts/versions.mjs check
           test "$TAG" = "v$(node -p "require('./designer-skill-mcp/package.json').version")"
 
@@ -44,7 +46,7 @@ jobs:
         run: |
           npm ci
           npm run build
-          git diff --exit-code -- assets/
+          git diff --exit-code -- assets/ ../skills/
           node --test checks/core.mjs
           npm run typecheck
           npm test
@@ -119,8 +121,14 @@ jobs:
       # scripts/versions.mjs keeps server.json name and package.json mcpName on it.
       - name: Publish to the MCP registry
         working-directory: designer-skill-mcp
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.9
+          MCP_PUBLISHER_SHA256: 4d527ca8f1ced0394c962dc925c2a4a4addef441cbefd62501c875e9481823a8
         run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          # Pinned release and digest: this job holds an OIDC credential, so it runs no unverified binary.
+          curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum --check --strict
+          tar xzf mcp-publisher.tar.gz mcp-publisher
           ./mcp-publisher validate
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish

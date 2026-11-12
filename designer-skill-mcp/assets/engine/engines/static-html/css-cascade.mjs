@@ -1,5 +1,5 @@
 import { profileStep, recordProfileEvent } from '../../profile/profiler.mjs';
-import { resolveLengthPx } from '../../rules/checks.mjs';
+import { resolveFontSizeValue, resolveLengthPx } from '../../rules/checks.mjs';
 import { parseCssColor } from '../../shared/color.mjs';
 
 // The engine never touches the filesystem: linked stylesheets arrive through
@@ -323,6 +323,8 @@ const STATIC_DEFAULT_STYLE = {
   overflow: 'visible',
   overflowX: 'visible',
   overflowY: 'visible',
+  transform: 'none',
+  translate: 'none',
 };
 
 const STATIC_PROP_MAP = {
@@ -378,6 +380,8 @@ const STATIC_PROP_MAP = {
   'overflow': 'overflow',
   'overflow-x': 'overflowX',
   'overflow-y': 'overflowY',
+  'transform': 'transform',
+  'translate': 'translate',
 };
 
 function splitCssList(value) {
@@ -474,8 +478,9 @@ function normalizeStaticCssValue(prop, value, customProps, parentStyle, currentS
   }
   if (prop === 'fontSize') {
     const base = parseFloat(parentStyle?.fontSize) || 16;
-    const px = resolveLengthPx(out, base);
-    if (px != null) out = `${px}px`;
+    const px = resolveFontSizeValue(out, base);
+    // Unevaluable (vw, clamp(), calc()): keep the inherited size; computeNode marks it uncertain.
+    out = `${px ?? base}px`;
   }
   if (prop === 'letterSpacing') {
     const base = parseFloat(currentStyle?.fontSize || parentStyle?.fontSize) || 16;
@@ -559,6 +564,26 @@ function parseStaticAnimation(value) {
   };
 }
 
+// Remove url(...) and *-gradient(...) calls, parentheses balanced, from a background shorthand.
+function stripImageFunctions(value) {
+  let out = '';
+  for (let i = 0; i < value.length;) {
+    const call = value.slice(i).match(/^(?:url|(?:repeating-)?(?:linear|radial|conic)-gradient|image-set)\(/i);
+    if (!call) { out += value[i++]; continue; }
+    let depth = 0;
+    for (i += call[0].length - 1; i < value.length; i++) {
+      if (value[i] === '(') depth++;
+      else if (value[i] === ')' && --depth === 0) { i++; break; }
+    }
+    out += ' ';
+  }
+  return out;
+}
+
+// User-agent defaults that change whether text counts as large or bold (HTML Rendering §15.3).
+const UA_FONT_SIZE_EM = { h1: 2, h2: 1.5, h3: 1.17, h4: 1, h5: 0.83, h6: 0.67 };
+const UA_BOLD_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'b', 'strong', 'th']);
+
 function expandStaticDeclaration(prop, value) {
   const p = prop.toLowerCase();
   const v = String(value || '').trim();
@@ -568,8 +593,8 @@ function expandStaticDeclaration(prop, value) {
     const out = [];
     const hasImage = /gradient|url\(/i.test(v);
     if (hasImage) out.push(['backgroundImage', v]);
-    const beforeImage = hasImage ? v.split(/(?:repeating-)?(?:linear|radial|conic)-gradient\(|url\(/i)[0] : v;
-    const color = extractStaticColor(hasImage ? beforeImage : v);
+    // The color may sit before or after the image layers: drop the image functions, keep the rest.
+    const color = extractStaticColor(hasImage ? stripImageFunctions(v) : v);
     if (color) out.push(['backgroundColor', color]);
     return out;
   }
@@ -1143,6 +1168,9 @@ function buildStaticStyleMap(root, staticDoc, sheets, modules, profile, filePath
       if (STATIC_INHERITED_PROPS.has(prop) && parentStyle?.[prop] != null) values[prop] = parentStyle[prop];
       else values[prop] = STATIC_DEFAULT_STYLE[prop];
     }
+    const tag = String(node.name || '').toLowerCase();
+    if (tag in UA_FONT_SIZE_EM) values.fontSize = `${(parseFloat(values.fontSize) || 16) * UA_FONT_SIZE_EM[tag]}px`;
+    if (UA_BOLD_TAGS.has(tag)) values.fontWeight = '700';
     const ordered = [...specifiedMap].filter(([prop]) => !prop.startsWith('--'));
     ordered.sort(([a], [b]) => (a === 'color' ? -1 : b === 'color' ? 1 : 0));
     for (const [prop, decl] of ordered) {
@@ -1150,6 +1178,14 @@ function buildStaticStyleMap(root, staticDoc, sheets, modules, profile, filePath
       if (value !== null) values[prop] = value;
     }
     const unevaluable = new Set();
+    // A font size is uncertain when this element's own value cannot be evaluated, or when it
+    // inherits (or scales, via em/%) an uncertain one. An absolute size makes it certain again.
+    const ownSize = specifiedMap.get('fontSize');
+    const ownRaw = ownSize ? String(substituteVars(ownSize.value, customProps) ?? '').trim().toLowerCase() : null;
+    const ownEvaluable = ownRaw !== null && resolveFontSizeValue(ownRaw, 16) !== null;
+    const relative = ownRaw === null || /(?:em|%)$|^(?:smaller|larger|inherit|unset)$/.test(ownRaw) && !/rem$/.test(ownRaw);
+    if ((ownRaw !== null && !ownEvaluable && !/^(?:inherit|initial|unset|revert|revert-layer)$/.test(ownRaw)) ||
+        (relative && parentStyle?.__unevaluable?.has('fontSize'))) unevaluable.add('fontSize');
     for (const prop of COLOR_PROPS) {
       if (values[prop] === 'currentcolor') values[prop] = values.color;
       const value = values[prop];

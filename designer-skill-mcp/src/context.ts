@@ -8,6 +8,26 @@ export interface ProjectContext {
   hasProduct: boolean; product: string | null; productPath: string | null;
   hasDesign: boolean; design: string | null; designPath: string | null;
   contextDir: string; register: "brand" | "product" | null;
+  /** Design tooling found at the project root, each with the action it implies. */
+  integrations: Integration[];
+}
+
+export interface Integration { id: string; path: string; hint: string }
+
+const INTEGRATION_PROBES: ReadonlyArray<{ id: string; paths: readonly string[]; hint: string }> = [
+  { id: "shadcn", paths: ["components.json"], hint: "shadcn registry configured: add components through it (shadcn CLI or MCP) before hand-building one." },
+  { id: "storybook", paths: [".storybook"], hint: "Storybook present: reuse documented components and verify changes in their stories." },
+  { id: "design-tokens", paths: ["tokens.json", "design-tokens.json", "tokens/tokens.json"], hint: "Design tokens file found: treat it as the token source of truth (convert_design_tokens renders it as CSS)." },
+  { id: "tailwind", paths: ["tailwind.config.js", "tailwind.config.ts", "tailwind.config.mjs", "tailwind.config.cjs"], hint: "Tailwind config found: use its theme scale, not ad-hoc values." },
+  { id: "figma-code-connect", paths: ["figma.config.json"], hint: "Figma Code Connect configured: map designs to the existing components through a Figma MCP." },
+  { id: "playwright", paths: ["playwright.config.ts", "playwright.config.js", "playwright.config.mjs"], hint: "Playwright configured: verify_rendered can load local pages in a real browser." },
+];
+
+function detectIntegrations(root: string): Integration[] {
+  return INTEGRATION_PROBES.flatMap(({ id, paths, hint }) => {
+    const path = paths.find((candidate) => existsSync(join(root, candidate)));
+    return path ? [{ id, path, hint }] : [];
+  });
 }
 
 const CONTEXT_MAX_BYTES = 1024 * 1024;
@@ -22,7 +42,7 @@ function contextDirs(root: string): string[] {
   if (env) {
     const dir = resolve(root, env);
     assertWithin(root, dir);
-    dirs.push(dir);
+    dirs.unshift(dir); // an explicitly configured directory outranks the defaults
   }
   return dirs;
 }
@@ -84,10 +104,11 @@ export function loadProjectContext(cwd = process.cwd()): ProjectContext {
   const product = readDocument(root, productPath);
   const design = readDocument(root, designPath);
   return {
-    hasProduct: !!product?.trim(), product, productPath: productPath ? relative(root, productPath) : null,
-    hasDesign: !!design?.trim(), design, designPath: designPath ? relative(root, designPath) : null,
+    hasProduct: !!product?.trim(), product, productPath: productPath ? toPosix(relative(root, productPath)) : null,
+    hasDesign: !!design?.trim(), design, designPath: designPath ? toPosix(relative(root, designPath)) : null,
     contextDir: productPath ? dirname(productPath) : designPath ? dirname(designPath) : root,
     register: extractRegister(product),
+    integrations: detectIntegrations(root),
   };
 }
 
@@ -99,5 +120,6 @@ export function formatProjectContext(ctx: ProjectContext): string {
   else parts.push("NO_DESIGN_MD: Inspect tokens and neighboring components before inferring identity.");
   parts.push(ctx.register ? `Register: ${ctx.register}. Preserve approved identity unless a change is authorized.` :
     "Register is not documented. Infer only what the task requires and state uncertainty.");
+  if (ctx.integrations.length) parts.push(`Project tooling:\n${ctx.integrations.map((i) => `- ${i.id} (${i.path}): ${i.hint}`).join("\n")}`);
   return parts.join("\n\n---\n\n");
 }

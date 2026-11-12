@@ -96,6 +96,8 @@ function createScanFs({ root: rootInput, webRoot: webRootInput, maxFileBytes, ma
       ? path.join(webRoot, clean)
       : path.resolve(path.dirname(path.join(root, fromRel)), clean);
     if (!isWithin(root, abs)) return { ok: false, reason: 'outside the project root' };
+    // A root-relative href resolves like a web server: it cannot climb out of the web root.
+    if (clean.startsWith('/') && !isWithin(webRoot, abs)) return { ok: false, reason: 'outside the web root' };
     const result = read(abs, 'linked-stylesheet');
     return result.ok ? { ok: true, css: result.text, path: result.path } : { ok: false, reason: result.reason };
   }

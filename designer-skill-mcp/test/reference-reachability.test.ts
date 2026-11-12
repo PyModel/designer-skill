@@ -68,7 +68,7 @@ describe("disclosed craft provenance (historical, not a snapshot dependency)", (
       expect(catalogue).toContain(`\`${tool}\``);
     }
     expect(catalogue).toContain("selectedIds");
-    expect(catalogue).toContain("remote-only");
+    expect(catalogue).toContain("this server's pass-through");
     expect(catalogue).toContain("niblet.pymodel.com/account");
   });
 

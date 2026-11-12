@@ -11,7 +11,7 @@ For UI, layout, component, page or visual design work:
 1. Call `get_preflight_brief`. Audits and plans do not authorize edits.
 2. Call `load_project_context` with the absolute project root (`cwd`). Inspect existing tokens, components and states before choosing a direction.
 3. Call `dispatch_intent` and load only the references it recommends with `get_reference` (normally 1–4).
-4. Bounded repairs preserve the existing identity: skip direction ceremony, or call `commit_design_direction` with `mode: "preserve"`. For a new direction, call it with:
+4. Bounded repairs preserve the existing identity: skip direction ceremony, or call `validate_design_direction` with `mode: "preserve"`. For a new direction, call it with:
    - `register`: `brand` or `product`
    - `designRead`: 20+ characters on this surface, audience and visual language
    - `contextSources`: the project files you actually inspected (required, 1–32)

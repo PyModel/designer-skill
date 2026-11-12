@@ -28,7 +28,7 @@ describe("bundled detector integration", () => {
   it("reports scanned files and hashes without certifying UI readiness", async () => {
     const cwd = root(); writeFileSync(join(cwd, "fixture.css"), ".fixture { display: block; }\n");
     const result = await reviewAndGate("fixture.css", { cwd });
-    expect(result.schemaVersion).toBe(3);
+    expect(result.schemaVersion).toBe(4);
     expect(result.coverage.scannedFiles).toBe(1);
     expect(result.files[0]).toMatchObject({ path: "fixture.css", role: "selected" });
     expect(result.files[0].sha256).toMatch(/^[a-f0-9]{64}$/);
@@ -230,7 +230,7 @@ describe("detector policy", () => {
   });
 
   it("rejects unknown project blocking rules", async () => {
-    await expect(reviewAndGate(".", { cwd: root(), blockingRules: ["nope"] })).rejects.toMatchObject({ code: "REGISTRY_INVALID" });
+    await expect(reviewAndGate(".", { cwd: root(), blockingRules: ["nope"] })).rejects.toMatchObject({ code: "INPUT_INVALID" }); // the caller's input is wrong, not the registry
   });
 });
 

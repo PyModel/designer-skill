@@ -54,6 +54,10 @@ export interface ScanOptions {
   cwd?: string;
   /** Rules that only the committed config may waive. Defaults to the required static rules. */
   protectedRules?: ReadonlySet<string>;
+  /** Aborting terminates the scan worker (client cancellation or disconnect). */
+  signal?: AbortSignal;
+  /** Called with each file as the worker starts analyzing it. */
+  onProgress?: (file: string) => void;
 }
 
 interface EngineModules {
@@ -70,6 +74,9 @@ interface EngineModules {
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const WORKER_HEAP_MB = 1024;
+/** Each scan owns a worker with a 1 GiB heap; more than this many at once is refused, not queued. */
+export const MAX_CONCURRENT_SCANS = 4;
+let activeScans = 0;
 
 let enginePromise: Promise<EngineModules> | undefined;
 function loadEngine(): Promise<EngineModules> {
@@ -110,9 +117,15 @@ interface WorkerResult {
   designSystem: DetectionReport["designSystem"];
 }
 
-function runWorker(workerUrl: URL, job: unknown): Promise<WorkerResult> {
+function runWorker(workerUrl: URL, job: unknown, hooks: Pick<ScanOptions, "signal" | "onProgress"> = {}): Promise<WorkerResult> {
   const timeoutMs = scanTimeoutMs();
-  return new Promise((resolvePromise, reject) => {
+  if (hooks.signal?.aborted) return Promise.reject(new DesignError("CANCELLED", "Scan cancelled before it started."));
+  if (activeScans >= MAX_CONCURRENT_SCANS) {
+    return Promise.reject(new DesignError("SCAN_LIMIT", `${MAX_CONCURRENT_SCANS} scans are already running. Retry when one finishes.`,
+      { bound: "concurrency", limit: MAX_CONCURRENT_SCANS }));
+  }
+  activeScans++;
+  return new Promise<WorkerResult>((resolvePromise, reject) => {
     const worker = new Worker(workerUrl, { workerData: { job }, resourceLimits: { maxOldGenerationSizeMb: WORKER_HEAP_MB } });
     let currentFile = "";
     let settled = false;
@@ -120,14 +133,17 @@ function runWorker(workerUrl: URL, job: unknown): Promise<WorkerResult> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      hooks.signal?.removeEventListener("abort", onAbort);
       void worker.terminate();
       fn();
     };
+    const onAbort = () => finish(() => reject(new DesignError("CANCELLED", "Scan cancelled by the client.")));
+    hooks.signal?.addEventListener("abort", onAbort, { once: true });
     const timer = setTimeout(() => finish(() => reject(new DesignError("SCAN_LIMIT",
       `Scan exceeded ${timeoutMs} ms${currentFile ? ` while analyzing ${currentFile}` : ""}. Narrow the target or ignore that file.`,
       { bound: "time", limit: timeoutMs, path: currentFile || "." }))), timeoutMs);
     worker.on("message", (message: { type: string; file?: string; result?: WorkerResult; error?: { code: string; message: string; details?: Record<string, unknown> } }) => {
-      if (message.type === "progress") currentFile = message.file ?? "";
+      if (message.type === "progress") { currentFile = message.file ?? ""; hooks.onProgress?.(currentFile); }
       else if (message.type === "result") finish(() => resolvePromise(message.result!));
       else if (message.type === "error") finish(() => reject(new DesignError(message.error!.code, message.error!.message, message.error!.details)));
     });
@@ -136,7 +152,7 @@ function runWorker(workerUrl: URL, job: unknown): Promise<WorkerResult> {
         { bound: "memory", limit: WORKER_HEAP_MB, path: currentFile || "." })
       : new DesignError("OPERATION_FAILED", `Detector failed: ${error.message}`))));
     worker.on("exit", (code) => finish(() => reject(new DesignError("OPERATION_FAILED", `Detector exited unexpectedly (code ${code}).`))));
-  });
+  }).finally(() => { activeScans--; });
 }
 
 export async function scanAntipatterns(target: string, options: ScanOptions = {}): Promise<DetectionReport> {
@@ -168,7 +184,7 @@ export async function scanAntipatterns(target: string, options: ScanOptions = {}
       },
       design,
       limits: { maxFileBytes: SCAN_LIMITS.fileBytes, maxTotalBytes: SCAN_LIMITS.totalBytes, maxFindings: SCAN_LIMITS.findings },
-    })
+    }, options)
     : { findings: [], fileMeta: [], files: [], bytesScanned: 0, unsupportedBinary: 0, designSystem: { status: "absent" as const } };
   selected.coverage.scannedFiles = result.fileMeta.length;
   selected.coverage.bytesScanned = result.bytesScanned;

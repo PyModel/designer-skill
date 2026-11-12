@@ -79,12 +79,21 @@ const compiledGlobs = new Map();
 function expandBraces(glob) {
   const open = glob.indexOf('{');
   if (open === -1) return [glob];
-  const close = glob.indexOf('}', open);
+  // Find the brace that closes this one, and the commas at its own depth.
+  let depth = 0, close = -1;
+  const commas = [];
+  for (let i = open; i < glob.length; i++) {
+    if (glob[i] === '{') depth++;
+    else if (glob[i] === '}' && --depth === 0) { close = i; break; }
+    else if (glob[i] === ',' && depth === 1) commas.push(i);
+  }
   if (close === -1) return [glob];
+  const bounds = [open, ...commas, close];
   const out = [];
-  for (const option of glob.slice(open + 1, close).split(',')) {
-    for (const rest of expandBraces(glob.slice(close + 1))) {
-      out.push(glob.slice(0, open) + option + rest);
+  for (let i = 0; i + 1 < bounds.length; i++) {
+    // Each option may itself contain braces; so may the text after the group.
+    for (const variant of expandBraces(glob.slice(0, open) + glob.slice(bounds[i] + 1, bounds[i + 1]) + glob.slice(close + 1))) {
+      out.push(variant);
       if (out.length > MAX_BRACE_EXPANSIONS) throw new Error('glob expands to too many alternatives');
     }
   }
@@ -114,7 +123,8 @@ function compileGlob(glob) {
   let compiled = compiledGlobs.get(glob);
   if (compiled) return compiled;
   if (glob.length > MAX_GLOB_LENGTH) throw new Error(`glob longer than ${MAX_GLOB_LENGTH} characters`);
-  compiled = expandBraces(glob.replace(/^\.\//, '')).map((variant) => {
+  // A trailing slash names a directory: everything under it (like .gitignore).
+  compiled = expandBraces(glob.replace(/^\.\//, '').replace(/\/$/, '/**')).map((variant) => {
     const segments = [];
     for (const part of variant.split('/').filter(Boolean)) {
       if (part === '**' && segments[segments.length - 1] === '**') continue;
@@ -164,9 +174,13 @@ export function assertValidGlob(glob) {
   compileGlob(String(glob));
 }
 
-/** A project-relative file is ignored when any ignoreFiles glob matches it. */
+// Test and mock sources hold markup as fixtures and assertions, not as shipped UI:
+// `<img src="">` in a test is the case under test. They count as ignoredFiles in coverage.
+const DEFAULT_IGNORED_FILES = ['*.test.*', '*.spec.*', '**/__tests__/**', '**/__mocks__/**'];
+
+/** A project-relative file is ignored when a default or ignoreFiles glob matches it. */
 export function shouldIgnoreDetectionFile(relPath, config) {
-  return matchesAnyGlob(relPath, config?.ignoreFiles);
+  return matchesAnyGlob(relPath, DEFAULT_IGNORED_FILES) || matchesAnyGlob(relPath, config?.ignoreFiles);
 }
 
 /** A directory can be pruned when a glob ending in `/**` covers everything
@@ -241,6 +255,9 @@ function extractFindingIgnoreValueRaw(finding, rule = normalizeIgnoreRule(findin
 
     const family = text.match(/font-family\s*:\s*["']?([^'",;\n]+)/i);
     if (family) return cleanIgnoreValueDisplay(family[1]);
+
+    const googleLabel = text.match(/^Google Fonts:\s*([^()\n;]+)/i);
+    if (googleLabel) return cleanIgnoreValueDisplay(googleLabel[1]);
 
     const google = text.match(/[?&]family=([^&:;\n]+)/i);
     if (google) {

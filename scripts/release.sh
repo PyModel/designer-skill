@@ -57,7 +57,7 @@ publish_local() {
     cd "$wt/designer-skill-mcp" &&
       npm ci &&
       npm run build &&
-      git diff --exit-code -- assets/ &&
+      git diff --exit-code -- assets/ ../skills/ &&
       node --test checks/core.mjs &&
       npm run typecheck &&
       npm test &&
@@ -107,7 +107,7 @@ claude plugin validate --strict "$ROOT"
   cd "$PKG_DIR"
   npm ci
   npm run build
-  git -C "$ROOT" diff --exit-code -- designer-skill-mcp/assets/ || die "generated assets drifted from skills/; commit the sync first"
+  git -C "$ROOT" diff --exit-code -- designer-skill-mcp/assets/ skills/ || die "generated assets drifted from skills/; commit the sync first"
   node --test checks/core.mjs
   npm run typecheck
   npm test

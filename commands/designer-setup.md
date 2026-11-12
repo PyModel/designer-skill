@@ -28,7 +28,7 @@ npx -y @pymodel/designer-skill-mcp --check-update
 Ask the agent:
 
 ```
-Use designer-skill: call get_preflight_brief, then commit_design_direction for a sample brand landing page direction, then list_commands.
+Use designer-skill: call get_preflight_brief, then validate_design_direction for a sample brand landing page direction, then list_commands.
 ```
 
 You should see the skill router and command list.

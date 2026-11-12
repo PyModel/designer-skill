@@ -37,6 +37,14 @@ describe("host-bound semantic report validation", () => {
     const { root, plan, report } = fixture(); report.checks[0].evidence[0].revision = "old";
     expect(validateRunReport(report, plan, root).issues).toContain("ui: stale evidence revision.");
   });
+  it("accepts a baseline artifact beside final-revision evidence, but not on its own", () => {
+    const { root, plan, report } = fixture();
+    const [current] = report.checks[0].evidence;
+    report.checks[0].evidence = [{ ...current, revision: plan.inputRevision }, current];
+    expect(validateRunReport(report, plan, root).issues.join(" ")).not.toContain("stale evidence revision");
+    report.checks[0].evidence = [{ ...current, revision: plan.inputRevision }];
+    expect(validateRunReport(report, plan, root).issues).toContain("ui: stale evidence revision.");
+  });
   it("requires final resolution evidence for resolved blocking findings but permits historical defect evidence", () => {
     const { root, plan, report } = fixture();
     const historic = { ...report.checks[0].evidence[0], revision: "initial" };

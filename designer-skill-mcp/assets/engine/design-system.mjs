@@ -191,6 +191,8 @@ function addColorObject(out, colors, prefix = 'colors') {
   for (const [name, value] of Object.entries(colors)) {
     if (typeof value === 'string') {
       addDesignColor(out, value, `${prefix}.${name}`);
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      addColorObject(out, value, `${prefix}.${name}`); // nested groups: brand.500, neutral.100, …
     }
   }
 }
@@ -415,6 +417,8 @@ function checkFontStack(stack, filePath, line, designSystem, context) {
 }
 
 function extractRadiusTokens(value) {
+  // calc(), clamp(), var() and friends have no single comparable length.
+  if (/\(/.test(String(value || ''))) return [];
   return String(value || '')
     .replace(/\s*\/\s*/g, ' ')
     .split(/\s+/)

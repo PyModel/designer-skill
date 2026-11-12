@@ -18,7 +18,7 @@
 8. [The recommended flow](#the-recommended-flow)
 9. [Walkthrough: a pricing page](#walkthrough-a-pricing-page)
 10. [What the ship gate does and doesn't check](#what-the-ship-gate-does-and-doesnt-check)
-11. [All 14 tools](#all-14-tools)
+11. [All 18 tools](#all-18-tools)
 12. [Troubleshooting](#troubleshooting)
 13. [FAQ](#faq)
 
@@ -41,7 +41,7 @@ It is **not** a design tool like Figma. It doesn't draw layouts or render compon
 It is a set of **markdown references** plus a small **static detector**, served over MCP:
 
 - **A router** (`SKILL.md`) that sets the working rules: stay in the scope the user asked for, preserve the product's existing identity unless told otherwise, and never invent test results.
-- **41 references**: 15 designer references (typography, color, motion, engineering, anti-slop, redesign, design systems and more) and 26 `ux/*` references (forms, accessibility, navigation, i18n and others).
+- **51 references**: 25 designer references (typography, color, motion, engineering, anti-slop, redesign, design systems and more) and 26 `ux/*` references (forms, accessibility, navigation, i18n and others).
 - **A 44-rule detector** that scans your files for concrete problems such as low text contrast or broken images.
 
 It is framework-agnostic. React, Vue, Svelte, plain HTML and Tailwind all work, because the references describe principles, not syntax.
@@ -60,7 +60,7 @@ One thing to know up front: the style guidance is **advisory**. The skill states
 | **Resources** | Read-only content the agent can fetch |
 | **Prompts** | Prompt templates you can start a task from |
 
-designer-skill offers **14 tools**, two resources (`designer://skill` and `designer://reference/{+name}`) and one prompt (`design`, with a `task` and an optional `aesthetic`).
+designer-skill offers **18 tools**, two resources (`designer://skill` and `designer://reference/{+name}`) and one prompt (`design`, with a `task` and an optional `aesthetic`).
 
 You don't call any of this yourself. You describe the UI work, and Pythinker calls the tools.
 
@@ -72,7 +72,7 @@ You don't call any of this yourself. You describe the UI work, and Pythinker cal
 2. **Node.js 22 or later.** The server runs through `npx`, and the package requires Node `>=22`. Check with `node --version`.
 3. **An internet connection** the first time, so `npx` can fetch the package from npm. After that it comes from the npm cache.
 
-**No API key.** The core tools read bundled files and scan your local project. Two optional tools (`find_ui_references`, `get_design_reference`) search the niblet.com screen catalogue and need a `NIBLET_TOKEN`; without it they return setup instructions instead of results.
+**No API key.** The core tools read bundled files and scan your local project. Four optional catalogue tools (`find_ui_references`, `get_design_reference`, `find_ui_materials`, `get_ui_component`) bring real product screens, licensed fonts and icons, and component source from the Niblet catalogue. They need a `NIBLET_TOKEN`: sign up at [niblet.pymodel.com](https://niblet.pymodel.com), create an MCP key at [niblet.pymodel.com/account](https://niblet.pymodel.com/account) and add it to the server's `env`. Without it they return those setup steps instead of results, and everything else works.
 
 ---
 
@@ -117,7 +117,7 @@ No `env` block is needed. Save, then restart Pythinker or run `/mcp reconnect`.
 - `toolTimeout` (optional) is the per-call timeout in seconds.
 - `enabledTools` (optional) limits which tools are registered; `["*"]` registers all of them.
 
-**Pin a version:** replace the package with `@pymodel/designer-skill-mcp@0.18.1` so the server doesn't change under you.
+**Pin a version:** replace the package with `@pymodel/designer-skill-mcp@0.23.0` so the server doesn't change under you.
 
 **Run from a local checkout:** clone [PyModel/designer-skill](https://github.com/PyModel/designer-skill), run `npm ci && npm run build` inside `designer-skill-mcp/`, then set `"command": "node"` and `"args": ["/abs/path/to/designer-skill-mcp/dist/index.js"]`.
 
@@ -126,7 +126,7 @@ No `env` block is needed. Save, then restart Pythinker or run `/mcp reconnect`.
 ## Verify the connection
 
 1. **Is it configured?** `pythinker mcp list` should show `designer-skill` with its command.
-2. **Does it start?** `pythinker mcp test designer-skill` starts the server and lists its tools. You should see all 14, including `get_preflight_brief`, `dispatch_intent` and `review_and_gate`.
+2. **Does it start?** `pythinker mcp test designer-skill` starts the server and lists its tools. You should see all 18, including `get_preflight_brief`, `dispatch_intent` and `review_and_gate`.
 3. **Is it loaded in your session?** Inside the TUI, `/mcp` lists connected servers and `/tools` should show names starting with `mcp_designer-skill_`.
 
 If any step fails, see [Troubleshooting](#troubleshooting).
@@ -207,7 +207,7 @@ If the design feels too safe, push back in plain language: "It's a bit safe. Mak
 
 ## What the ship gate does and doesn't check
 
-`review_and_gate` is the ship gate. It is **static only**: it reads your source files and never opens a browser.
+`review_and_gate` is the ship gate. It is **static only**: it reads your source files and never opens a browser. (`verify_rendered` is the separate tool that does; see below.)
 
 **What it checks.** Three rules are required by default: `broken-image`, `low-contrast` and `clipped-overflow-container`. The gate does not promise they run on every file; it reports their coverage, since a rule can only run on file types it supports. You can make more of the 44 detector rules blocking with the `blockingRules` argument. For each required rule it reports one status:
 
@@ -217,38 +217,41 @@ If the design feels too safe, push back in plain language: "It's a bit safe. Mak
 | `UNSUPPORTED` | The file type can't express it statically (e.g. contrast in a CSS-only or TSX file) |
 | `UNRESOLVED` | It applies but couldn't be evaluated (e.g. a remote stylesheet or a `var()` with no value) |
 | `WAIVED` | Turned off in the committed `.designer-skill/config.json` |
+| `NOT_RUN` | No file was scanned |
 
-**How to read the result** (gate `schemaVersion: 3`):
+**How to read the result** (gate `schemaVersion: 4`):
 
 - `staticStatus` is `PASS`, `FAIL` or `INCOMPLETE`. `INCOMPLETE` means a required rule couldn't run. Treat it as unfinished, not as a pass.
 - The overall `status` is only ever `FAIL` or `NOT_VERIFIED`. It never returns PASS.
 - An empty scan, or one where every required rule is waived, fails with `NO_SCAN_COVERAGE`.
 - The `checks` list always reports `rendered` (with `text-overflow`), `functional`, `accessibility` and `performance` as `NOT_RUN`.
 
-**What it doesn't do.** It never certifies that your UI is ready. Rendering, keyboard and focus behavior, responsive layout and real accessibility testing belong to your own test harness or a manual check. Full contract: [`docs/HARDENING.md`](../HARDENING.md).
-
-**What about `anti_slop_checklist`?** It returns the `avoid-ai-slop` reference: advisory style and truthful-content guidance. It's useful for a review, but it doesn't check anything and it isn't the gate.
+**What it doesn't do.** It never certifies that your UI is ready. For a rendered check, `verify_rendered` loads a local page in your project's own Playwright at desktop and mobile widths and reports page load, console errors, broken images, clipped text, horizontal overflow and axe-core accessibility violations, with screenshots; without Playwright installed it says `NOT_RUN`. Keyboard and focus behavior, interaction states and performance still belong to your own test harness or a manual check. Full contract: [`docs/HARDENING.md`](../HARDENING.md).
 
 ---
 
-## All 14 tools
+## All 18 tools
 
 | Tool | Purpose |
 |---|---|
-| `get_preflight_brief` | Scope and verification contract (call first) |
-| `load_project_context` | Read PRODUCT.md / DESIGN.md from the project (absolute `cwd`) |
-| `get_design_system` | SKILL.md router and reference map |
-| `get_reference` | One of 41 references by name (designer or `ux/*`) |
-| `anti_slop_checklist` | Advisory style and truthful-content review guidance |
-| `list_commands` | All design verbs with descriptions |
-| `get_command` | Help and reference names for one verb |
-| `dispatch_intent` | Map a request → verb(s) + at most four references to read |
-| `commit_design_direction` | Validate a context-grounded direction record |
-| `get_palette_seed` | OKLCH brand seed for authorized new palette work |
-| `detect_antipatterns` | Deterministic static scan (44 rules): coverage, file hashes, gaps |
-| `review_and_gate` | Static gate per required rule; never claims rendered readiness |
-| `find_ui_references` | Optional niblet real-screen search (`NIBLET_TOKEN`) |
-| `get_design_reference` | Optional niblet structured reference (`NIBLET_TOKEN`) |
+| `get_preflight_brief` | Compact scope and verification contract; call first |
+| `load_project_context` | Read PRODUCT.md and DESIGN.md and detect design tooling (tokens, shadcn, Storybook, Tailwind, Playwright); requires `cwd` |
+| `get_skill_contract` | This skill's full SKILL.md contract and reference routing map (not the project's design system) |
+| `get_reference` | Load one named reference (designer or `ux/*`) on demand |
+| `list_commands` | Discover canonical commands and aliases |
+| `get_command` | Command help and reference names, not eagerly loaded documents |
+| `dispatch_intent` | Route a request to commands and topic references; names every match, recommends at most four reads |
+| `validate_design_direction` | Validate inspected `contextSources` and preservation/new-direction inputs; stores nothing |
+| `get_palette_seed` | Optional seed for an authorized new palette |
+| `check_contrast` | WCAG 2.2 contrast for explicit color pairs, with large-text thresholds and advisory APCA Lc |
+| `convert_design_tokens` | W3C Design Tokens (DTCG) JSON to CSS custom properties or a Tailwind v4 `@theme` block |
+| `detect_antipatterns` | Bounded static scan: coverage, per-file engine and gaps, file hashes; requires `cwd` and `target` |
+| `review_and_gate` | Static verification per required rule; never an overall PASS by design; requires `cwd` and `target` |
+| `verify_rendered` | Load a local page in a real browser: load, console errors, broken images, clipped text, overflow, axe-core, screenshots. Uses the project's Playwright; `NOT_RUN` without it |
+| `find_ui_references` | Optional Niblet catalogue: real product screens for one design question (needs `NIBLET_TOKEN`); untrusted results |
+| `get_design_reference` | Optional Niblet catalogue: recorded colors, typography and components for a web screen or pack |
+| `find_ui_materials` | Optional Niblet catalogue: license-recorded fonts, icons, animated icons and components |
+| `get_ui_component` | Optional Niblet catalogue: a component's shadcn registry item; authorizes no install or write |
 
 This table matches the one in the [README](../../README.md#tools).
 

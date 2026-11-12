@@ -73,9 +73,14 @@ function checkStaticPageTypography(document, window) {
 }
 
 function checkElementBrokenImage(el) {
-  const src = (el.getAttribute && el.getAttribute('src')) ?? el.attribs?.src;
+  const attr = (name) => (el.getAttribute && el.getAttribute(name)) ?? el.attribs?.[name];
+  const src = attr('src');
   // Missing src attribute entirely
   if (src === undefined || src === null) {
+    // srcset on the image, or on a <source> of its <picture>, is a real source.
+    if (String(attr('srcset') ?? '').trim()) return [];
+    const picture = el.parentElement?.tagName === 'PICTURE' ? el.parentElement : null;
+    if (picture && [...picture.querySelectorAll('source')].some((s) => String(s.getAttribute('srcset') ?? '').trim())) return [];
     return [{ id: 'broken-image', snippet: '<img> with no src attribute' }];
   }
   const trimmed = String(src).trim();
@@ -148,7 +153,7 @@ async function detectHtml(filePath, options = {}) {
     phase: 'parse-html',
     ruleId: 'parse-document',
     target: filePath,
-  }, () => modules.parseDocument(html, { lowerCaseAttributeNames: false, lowerCaseTags: true, withStartIndices: true }));
+  }, () => modules.parseDocument(html, { lowerCaseAttributeNames: true, lowerCaseTags: true, withStartIndices: true }));
   const lineOf = makeLineIndex(html);
 
   const { sheets, gaps } = collectStaticStylesheets(root, modules, filePath, options);

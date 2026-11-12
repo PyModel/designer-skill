@@ -4,6 +4,7 @@ import {
   KNOWN_SERIF_FONTS,
   OVERUSED_FONTS,
   SAFE_TAGS,
+  CONTRAST_SKIP_TAGS,
   WCAG_LARGE_BOLD_TEXT_PX,
   WCAG_LARGE_TEXT_PX,
   isBrandFontOnOwnDomain,
@@ -64,19 +65,8 @@ function isEmojiOnlyText(text) {
 }
 
 function checkColors(opts) {
-  const { tag, textColor, bgColor, effectiveBg, effectiveBgStops, fontSize, fontWeight, hasDirectText, isEmojiOnly, bgClip, bgImage, classList } = opts;
-  if (SAFE_TAGS.has(tag)) {
-    // Exception for <a> and <button> elements styled as buttons. SAFE_TAGS
-    // exists to suppress contrast noise on inline links and unstyled controls,
-    // where the element has no own background and the contrast against the
-    // ancestor surface is already the intended visual. When the element has
-    // its own opaque background and direct text, it is a styled button — and
-    // contrast on its own surface is a real, frequent bug worth flagging.
-    const isStyledButton = (tag === 'a' || tag === 'button')
-      && hasDirectText
-      && bgColor && bgColor.a > 0.5;
-    if (!isStyledButton) return [];
-  }
+  const { tag, textColor, effectiveBg, effectiveBgStops, fontSize, fontSizeUncertain, fontWeight, hasDirectText, isEmojiOnly, bgClip, bgImage, classList } = opts;
+  if (CONTRAST_SKIP_TAGS.has(tag)) return [];
   const findings = [];
 
   if (hasDirectText && textColor && !isEmojiOnly) {
@@ -93,11 +83,14 @@ function checkColors(opts) {
       }
 
       // Low contrast (WCAG AA) — worst case across all bg stops
-      const ratios = bgs.map(b => contrastRatio(textColor, b));
+      // Translucent text is what it looks like over the surface, not its solid color.
+      const ratios = bgs.map(b => contrastRatio((textColor.a ?? 1) < 1 ? blendOver(textColor, b) : textColor, b));
       let worstIdx = 0;
       for (let i = 1; i < ratios.length; i++) if (ratios[i] < ratios[worstIdx]) worstIdx = i;
       const ratio = ratios[worstIdx];
-      const isLargeText = fontSize >= WCAG_LARGE_TEXT_PX || (fontSize >= WCAG_LARGE_BOLD_TEXT_PX && fontWeight >= 700);
+      // A size the cascade could not evaluate (vw, clamp, calc) may be large text:
+      // only a ratio failing both thresholds is certain.
+      const isLargeText = fontSizeUncertain || fontSize >= WCAG_LARGE_TEXT_PX || (fontSize >= WCAG_LARGE_BOLD_TEXT_PX && fontWeight >= 700);
       const threshold = isLargeText ? 3.0 : 4.5;
       if (ratio < threshold) {
         // Skip the false-positive class where text has alpha < 1 AND we
@@ -532,7 +525,8 @@ function checkHtmlPatterns(html) {
   // --- Motion ---
 
   // Bounce/elastic animation names
-  const bounceRe = /animation(?:-name)?\s*:\s*([^;{}]*(?:bounce|elastic|wobble|jiggle|spring)[^;{}]*)/gi;
+  // Bounded runs: unbounded [^;{}]* around the alternation is quadratic on long declarations.
+  const bounceRe = /animation(?:-name)?\s*:\s*([^;{}]{0,300}?(?:bounce|elastic|wobble|jiggle|spring)[^;{}]{0,300})/gi;
   const bounceMatch = bounceRe.exec(html);
   if (bounceMatch) {
     const animationToken = bounceMatch[1]
@@ -853,29 +847,53 @@ function resolveFontSizePx(el, win) {
   for (let i = chain.length - 1; i >= 0; i--) {
     const v = chain[i];
     if (!v || v === 'inherit') continue;
-    const num = parseFloat(v);
-    if (isNaN(num)) continue;
-    if (v.endsWith('px')) px = num;
-    else if (v.endsWith('rem')) px = num * 16;
-    else if (v.endsWith('em')) px = num * px;
-    else if (v.endsWith('%')) px = (num / 100) * px;
-    else px = num; // unitless — already resolved
+    px = resolveFontSizeValue(v, px) ?? px; // an unevaluable size keeps the inherited one
   }
   return px;
+}
+
+// Absolute CSS units in px (CSS Values 4 §6.2).
+const ABSOLUTE_UNIT_PX = { px: 1, pt: 96 / 72, pc: 16, in: 96, cm: 96 / 2.54, mm: 96 / 25.4, q: 96 / 101.6 };
+const FONT_SIZE_KEYWORD_PX = { 'xx-small': 9, 'x-small': 10, small: 13, medium: 16, large: 18, 'x-large': 24, 'xx-large': 32, 'xxx-large': 48 };
+
+// One CSS length to px. Returns null for anything that needs layout or the
+// viewport (vw, vh, ch, ex, calc(), clamp(), var()): never a guess.
+function lengthToPx(value, fontSizePx, unitlessFactor = null) {
+  const match = String(value ?? '').trim().toLowerCase().match(/^([+-]?(?:\d+\.?\d*|\.\d+))([a-z%]*)$/);
+  if (!match) return null;
+  const num = parseFloat(match[1]);
+  const unit = match[2];
+  if (unit === '') return num === 0 ? 0 : (unitlessFactor === null ? null : num * unitlessFactor);
+  if (unit in ABSOLUTE_UNIT_PX) return num * ABSOLUTE_UNIT_PX[unit];
+  if (unit === 'rem') return num * 16;
+  if (unit === 'em') return num * fontSizePx;
+  if (unit === '%') return (num / 100) * fontSizePx;
+  return null;
+}
+
+// A font-size value to px against the parent's size; null when unevaluable.
+function resolveFontSizeValue(value, parentPx) {
+  const v = String(value ?? '').trim().toLowerCase();
+  if (v in FONT_SIZE_KEYWORD_PX) return FONT_SIZE_KEYWORD_PX[v];
+  if (v === 'smaller') return parentPx / 1.2;
+  if (v === 'larger') return parentPx * 1.2;
+  return lengthToPx(v, parentPx);
+}
+
+// font-weight keyword or number as a number.
+function fontWeightNumber(value) {
+  const v = String(value ?? '').trim().toLowerCase();
+  if (v === 'bold' || v === 'bolder') return 700;
+  if (v === 'lighter') return 300;
+  return parseInt(v) || 400;
 }
 
 // Resolve a CSS length value (line-height, letter-spacing, etc.) given a
 // known font-size context. Returns null for "normal" / unparseable values.
 function resolveLengthPx(value, fontSizePx) {
   if (!value || value === 'normal' || value === 'auto' || value === 'inherit') return null;
-  const num = parseFloat(value);
-  if (isNaN(num)) return null;
-  if (value.endsWith('px')) return num;
-  if (value.endsWith('rem')) return num * 16;
-  if (value.endsWith('em')) return num * fontSizePx;
-  if (value.endsWith('%')) return (num / 100) * fontSizePx;
   // Unitless line-height = multiplier, return px equivalent
-  return num * fontSizePx;
+  return lengthToPx(value, fontSizePx, fontSizePx);
 }
 
 function cssColorIsTransparent(value) {
@@ -1363,7 +1381,8 @@ function checkElementColors(el, style, tag, window) {
     effectiveBg,
     effectiveBgStops: effectiveBg || unevaluable ? null : resolveGradientStops(el, window),
     fontSize: parseFloat(style.fontSize) || 16,
-    fontWeight: parseInt(style.fontWeight) || 400,
+    fontSizeUncertain: !!style.__unevaluable?.has('fontSize'),
+    fontWeight: fontWeightNumber(style.fontWeight),
     hasDirectText,
     isEmojiOnly: isEmojiOnlyText(directText),
     bgClip: style.webkitBackgroundClip || style.backgroundClip || '',
@@ -1818,7 +1837,25 @@ function positionedStyleImpliesEscape(style) {
   ].filter(Boolean).map(value => String(value).trim().toLowerCase());
   for (const value of values) {
     if (/(^|[\s(])-+(?:\d|\.)/.test(value)) return true;
-    if (/(^|[\s(])100(?:\.0+)?%/.test(value)) return true;
+    // An offset of 100% or more puts the child at or past the far edge.
+    for (const [, percent] of value.matchAll(/(?:^|[\s(])(\d+(?:\.\d+)?)%/g)) if (parseFloat(percent) >= 100) return true;
+  }
+  // A translate of a full box or more, in either direction, moves it out entirely.
+  // Only translate functions move the box: scale(100%) or rotate() percentages do not.
+  const translations = [...String(style.transform || '').toLowerCase().matchAll(/translate(?:x|y|3d)?\(([^)]*)\)/g)].map(m => m[1]);
+  const motion = `${translations.join(' ')} ${style.translate || ''}`.toLowerCase();
+  for (const [, percent] of motion.matchAll(/-?(\d+(?:\.\d+)?)%/g)) if (parseFloat(percent) >= 100) return true;
+  return false;
+}
+
+// overflow: hidden clips an absolutely positioned descendant only when the
+// clipping box is, or sits inside, that descendant's containing block: some
+// element from the child's parent up to the clipper must be positioned.
+function clipperContainsAbsoluteChild(el, child, getStyle) {
+  for (let current = child.parentElement; current; current = current.parentElement) {
+    const position = getStyle(current).position || 'static';
+    if (position !== 'static') return true;
+    if (current === el) return false;
   }
   return false;
 }
@@ -1837,19 +1874,24 @@ function positionedChildEscapesClip(el, child, clipX, clipY) {
 function checkClippedOverflow(el, style, getStyle) {
   const clips = (v) => v === 'hidden' || v === 'clip';
   const scrolls = (v) => v === 'auto' || v === 'scroll';
-  const ox = style.overflowX || '', oy = style.overflowY || '', ov = style.overflow || '';
-  const clipX = clips(ox) || clips(ov);
-  const clipY = clips(oy) || clips(ov);
+  // The shorthand takes one or two values: `overflow: hidden auto` is x then y.
+  const [shortX = '', shortY = shortX] = String(style.overflow || '').trim().toLowerCase().split(/\s+/);
+  // The cascade keeps shorthand and longhands separately; either may carry the value.
+  const ox = [style.overflowX || '', shortX], oy = [style.overflowY || '', shortY];
+  const clipX = ox.some(clips), clipY = oy.some(clips);
   const anyClip = clipX || clipY;
-  const anyScroll = scrolls(ox) || scrolls(oy) || scrolls(ov);
+  // A box that scrolls on an axis reveals overflow there; only a non-scrolling clipped axis hides it.
+  const anyScroll = (!clipX || ox.some(scrolls)) && (!clipY || oy.some(scrolls));
   if (!anyClip || anyScroll) return [];
   if (clippingContainerIsIntentionalViewport(el)) return [];
   if (!el.querySelectorAll) return [];
   for (const child of el.querySelectorAll('*')) {
     const childStyle = getStyle(child);
     const pos = childStyle.position || '';
-    if (pos === 'absolute' || pos === 'fixed') {
+    // position: fixed is laid out against the viewport; overflow never clips it.
+    if (pos === 'absolute') {
       if (positionedChildIsDecorative(child)) continue;
+      if (!clipperContainsAbsoluteChild(el, child, getStyle)) continue;
       const escapes = positionedChildEscapesClip(el, child, clipX, clipY);
       if (escapes === false) continue;
       if (escapes === null && !positionedStyleImpliesEscape(childStyle)) continue;
@@ -1887,6 +1929,7 @@ export {
   isRepeatedKickerCandidate,
   collectRepeatedSectionKickerCandidates,
   resolveFontSizePx,
+  resolveFontSizeValue,
   resolveLengthPx,
   checkQuality,
   checkPageQualityFromDoc,

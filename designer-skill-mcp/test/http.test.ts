@@ -59,6 +59,17 @@ describe("HTTP exposure policy", () => {
 });
 
 describe("HTTP transport", () => {
+  it("refuses a browser request from a foreign Origin and accepts a loopback one", async () => {
+    const url = await start();
+    expect((await post(url, initialize, { origin: "https://evil.example" })).status).toBe(403);
+    expect((await post(url, initialize, { origin: "null" })).status).toBe(403);
+    expect((await post(url, initialize, { origin: "http://localhost:5173" })).status).toBe(200);
+    expect((await post(url, initialize)).status).toBe(200); // non-browser clients send no Origin
+  });
+  it("refuses a non-loopback bind that names no accepted Host", () => {
+    expect(() => assertHttpExposure({ host: "0.0.0.0", roots: ["/srv"], token: "t", allowedHosts: [] })).toThrow(/--allowed-host/);
+    expect(() => assertHttpExposure({ host: "0.0.0.0", roots: ["/srv"], token: "t", allowedHosts: ["design.example"] })).not.toThrow();
+  });
   it("serves initialize over POST /mcp and refuses GET", async () => {
     const url = await start();
     const res = await post(url, initialize);

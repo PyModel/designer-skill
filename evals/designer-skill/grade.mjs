@@ -40,7 +40,7 @@ export function gradeDecision(testCase, response) {
     if (action.kind === 'edit_source' && (posix.isAbsolute(target) || !expected.allowedEditTargets.some(path => posix.normalize(path) === target))) failures.push('Edit outside authorized target.');
     if (action.kind === 'read_registry' && target !== 'scripts/command-metadata.json' && !target.endsWith('/scripts/command-metadata.json')) failures.push('Filesystem routing does not use the registry.');
     if (action.kind === 'inspect_preview' && (!testCase.environment.preview || !testCase.environment.previewTools?.includes(action.tool))) failures.push('Undiscovered preview capability.');
-    if (!testCase.environment.mcp && action.tool && /^(?:mcp|dispatch_intent|get_command|get_reference|get_palette_seed|commit_design_direction|review_and_gate)/i.test(action.tool)) failures.push('Unavailable MCP tool proposed.');
+    if (!testCase.environment.mcp && action.tool && /^(?:mcp|dispatch_intent|get_command|get_reference|get_palette_seed|validate_design_direction|review_and_gate)/i.test(action.tool)) failures.push('Unavailable MCP tool proposed.');
     if (/(?:^|\/)\.env(?:$|[./])|live\/config\.json|scripts\/live|__designerSkillLiveDev/.test(action.target)) failures.push('Private data or unimplemented helper path.');
   }
   for (const required of expected.requiredActions) if (!kinds.has(required)) failures.push(`Missing action: ${required}.`);

@@ -6,8 +6,8 @@ import { DesignError } from "./scope.js";
 import { bundledFile } from "./assets.js";
 
 interface Rule { id: string; category: "slop" | "quality"; severity?: string }
-type RuleStatus = "RAN" | "WAIVED" | "UNSUPPORTED" | "UNRESOLVED";
-type CoverageFn = (ruleId: string, file: ScannedFile, designSystemStatus: string) => { status: Exclude<RuleStatus, "WAIVED">; reason?: string };
+type RuleStatus = "RAN" | "WAIVED" | "UNSUPPORTED" | "UNRESOLVED" | "NOT_RUN";
+type CoverageFn = (ruleId: string, file: ScannedFile, designSystemStatus: string) => { status: Exclude<RuleStatus, "WAIVED" | "NOT_RUN">; reason?: string };
 
 /** Required rules only a rendered check can evaluate; always reported as NOT_RUN here. */
 export const REQUIRED_RENDERED_RULES = ["text-overflow"] as const;
@@ -41,7 +41,7 @@ export type GateCode = "NO_SCAN_COVERAGE" | "STATIC_FINDINGS" | "REQUIRED_RULES_
   "REQUIRED_RULES_WAIVED" | "ADDITIONAL_VERIFICATION_REQUIRED";
 
 export interface GateResult {
-  schemaVersion: 3;
+  schemaVersion: 4;
   status: "FAIL" | "NOT_VERIFIED";
   staticStatus: "PASS" | "FAIL" | "INCOMPLETE";
   uiReadiness: "FAIL" | "NOT_VERIFIED";
@@ -75,12 +75,14 @@ function ruleCoverage(rule: string, report: DetectionReport, coverageOf: Coverag
     else out.files.unresolved++;
     if (out.examples.length < REPORTED_EXAMPLES) out.examples.push({ path: file.path, status: cell.status, reason: cell.reason ?? "" });
   }
-  out.status = out.files.unresolved ? "UNRESOLVED" : out.files.unsupported ? "UNSUPPORTED" : "RAN";
+  // A rule that met no file did not run; "RAN on 0 files" would read as coverage.
+  out.status = out.files.unresolved ? "UNRESOLVED" : out.files.unsupported ? "UNSUPPORTED" : out.files.ran ? "RAN" : "NOT_RUN";
   return out;
 }
 
 function describeRule(c: RuleCoverage): string {
   if (c.status === "WAIVED") return `${c.rule} WAIVED (committed config.json)`;
+  if (c.status === "NOT_RUN") return `${c.rule} NOT_RUN (no file scanned)`;
   if (c.status === "RAN") return `${c.rule} RAN on ${c.files.ran} file(s)`;
   const bad = c.status === "UNRESOLVED" ? c.files.unresolved : c.files.unsupported;
   const example = c.examples[0];
@@ -132,7 +134,7 @@ export function evaluateGate(report: DetectionReport, registry: unknown, coverag
   ].filter(Boolean).join("\n");
 
   return {
-    schemaVersion: 3, status, staticStatus, uiReadiness: status, scope: "static", code,
+    schemaVersion: 4, status, staticStatus, uiReadiness: status, scope: "static", code,
     findingCount: findings.length, blockingCount, warningCount: findings.length - blockingCount,
     findings, ruleCoverage: coverage, coverage: report.coverage, files: report.files, designSystem: report.designSystem,
     ignoredRules: report.ignoredRules, waivedRules: report.waivedRules, ignoredValues: report.ignoredValues,
@@ -155,14 +157,17 @@ async function loadRegistry(): Promise<{ ANTIPATTERNS: unknown; staticRuleCovera
   return import(pathToFileURL(path).href);
 }
 
-export async function reviewAndGate(target: string, options: { cwd?: string; blockingRules?: string[] } = {}): Promise<GateResult> {
+export async function reviewAndGate(target: string, options: { cwd?: string; blockingRules?: string[]; signal?: AbortSignal; onProgress?: (file: string) => void } = {}): Promise<GateResult> {
   const registry = await loadRegistry();
   const rules = validateRegistry(registry.ANTIPATTERNS);
   const blockingRules = options.blockingRules ?? [];
   const unknown = blockingRules.filter((id) => !rules.some((r) => r.id === id));
-  if (unknown.length) throw new DesignError("REGISTRY_INVALID", `Unknown project blocking rule(s): ${unknown.join(", ")}.`);
+  if (unknown.length) {
+    throw new DesignError("INPUT_INVALID", `Unknown blockingRules id(s): ${unknown.join(", ")}. Use exact detector rule ids.`,
+      { unknown, knownRules: rules.map((r) => r.id) });
+  }
   const report = await scanAntipatterns(target, {
-    cwd: options.cwd,
+    cwd: options.cwd, signal: options.signal, onProgress: options.onProgress,
     protectedRules: new Set([...REQUIRED_STATIC_RULES, ...blockingRules]),
   });
   return evaluateGate(report, rules, registry.staticRuleCoverage, blockingRules);

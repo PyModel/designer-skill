@@ -9,3 +9,6 @@ docs/superpowers/
 main-s/
 AGENTS.md
 blackbox/
+
+# Local agent tooling state
+.claude/autoharness/
