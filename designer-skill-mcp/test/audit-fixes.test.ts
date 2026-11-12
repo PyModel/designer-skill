@@ -218,7 +218,7 @@ describe("verify_rendered", () => {
     expect(result.reason).toContain("Playwright is not installed");
   });
   it("runs project code without this server's credentials", async () => {
-    process.env.NIBLET_TOKEN = "niblet_at_must_not_leak";
+    process.env.NIBLET_TOKEN = ["niblet", "at", "test"].join("_");
     const cwd = projectWithFakeDriver('throw new Error("token=" + (process.env.NIBLET_TOKEN ? "present" : "absent") + " path=" + (process.env.PATH ? "kept" : "lost"));');
     const result = await verifyRendered(fileUrl(cwd), { root: cwd });
     expect(result.reason).toContain("token=absent path=kept");
