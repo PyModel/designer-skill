@@ -1,9 +1,9 @@
 // Regressions from the 0.22 audit: each case failed (or did not exist) before 0.23.
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dispatchIntent, HOST_COMMANDS, TOPIC_READS } from "../src/dispatch.js";
 import { getCommandMetadata } from "../src/commands.js";
 import { ALL_REFERENCE_NAMES } from "../src/skill.js";
@@ -12,7 +12,7 @@ import { reviewAndGate } from "../src/gate.js";
 import { scanAntipatterns } from "../src/detect.js";
 import { apcaLc, checkContrast } from "../src/contrast.js";
 import { convertDesignTokens } from "../src/tokens.js";
-import { assertLocalUrl, verifyRendered } from "../src/rendered.js";
+import { assertLocalUrl, renderedPolicy, verifyRendered } from "../src/rendered.js";
 import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { getPaletteSeed } from "../src/palette.js";
@@ -178,46 +178,66 @@ describe("verify_rendered", () => {
     .clip{width:60px;white-space:nowrap;overflow:hidden} .faint{color:#ccc;background:#fff}</style></head>
     <body><main><h1>Title</h1><p class="clip">This sentence is far wider than sixty pixels</p>
     <p class="faint">low contrast</p><img src="missing.png" alt="x"></main></body></html>`;
-  it("only loads pages on this machine", () => {
-    const cwd = workspace({ "index.html": page });
-    expect(() => assertLocalUrl("https://example.com/", cwd)).toThrow(/loopback/);
-    expect(() => assertLocalUrl(pathToFileURL("/etc/hosts").href, cwd)).toThrow(/outside the project root/);
-    expect(assertLocalUrl("http://localhost:5173/app", cwd).hostname).toBe("localhost");
+  const repoModules = resolve(dirname(fileURLToPath(import.meta.url)), "..", "node_modules");
+  /** A project that has Playwright and axe-core installed (this repository's dev installs). */
+  const projectWithBrowser = (files: Record<string, string> = {}) => {
+    const cwd = workspace({ "index.html": page, ...files });
+    symlinkSync(repoModules, join(cwd, "node_modules"));
+    return cwd;
+  };
+  /** A project whose "playwright" is a stand-in that runs the given launch body in the worker process. */
+  const projectWithFakeDriver = (launchBody: string) => workspace({
+    "index.html": page,
+    "node_modules/playwright/package.json": '{"name":"playwright","main":"index.js"}',
+    "node_modules/playwright/index.js": `exports.chromium = { launch: async () => { ${launchBody} } };`,
   });
-  it("keeps the query and fragment of a file URL", () => {
+  const fileUrl = (cwd: string) => pathToFileURL(join(cwd, "index.html")).href;
+  const desktop = [{ name: "desktop", width: 800, height: 600 }];
+  const real = (result: Awaited<ReturnType<typeof verifyRendered>>) => {
+    if (result.status === "NOT_RUN") throw new Error(`no browser on this machine: ${result.reason}`);
+    return result;
+  };
+  const listen = (handler: Parameters<typeof createHttpServer>[1], host: string) => new Promise<{ port: number; close: () => void }>((done) => {
+    const server = createHttpServer(handler);
+    server.listen(0, host, () => done({ port: (server.address() as AddressInfo).port, close: () => server.close() }));
+  });
+  afterEach(() => { renderedPolicy.deadlineMs = 120_000; delete process.env.NIBLET_TOKEN; });
+
+  it("only loads pages on this machine", async () => {
     const cwd = workspace({ "index.html": page });
-    const url = assertLocalUrl(`${pathToFileURL(join(cwd, "index.html")).href}?theme=dark#/settings`, cwd);
+    await expect(assertLocalUrl("https://example.com/", cwd)).rejects.toThrow(/loopback/);
+    await expect(assertLocalUrl(pathToFileURL("/etc/hosts").href, cwd)).rejects.toThrow(/outside the project root/);
+    expect((await assertLocalUrl("http://localhost:5173/app", cwd)).hostname).toBe("localhost");
+    const url = await assertLocalUrl(`${fileUrl(cwd)}?theme=dark#/settings`, cwd);
     expect([url.search, url.hash]).toEqual(["?theme=dark", "#/settings"]);
   });
-  it("reports a page that does not load, or leaves the local scope, as a page-load FAIL", async () => {
-    const cwd = workspace({ "index.html": page });
-    const viewports = [{ name: "desktop", width: 800, height: 600 }];
-    const down = await verifyRendered("http://127.0.0.1:1/", { root: cwd, viewports });
-    if (down.status === "NOT_RUN") throw new Error(`no browser on this machine: ${down.reason}`);
-    expect(down).toMatchObject({ status: "FAIL", screenshots: [], checks: [{ id: "page-load", status: "FAIL" }] });
-    // 0.0.0.0 reaches this same server but is not a loopback name, so the landing page is out of scope.
-    const redirecting = createHttpServer((req, res) => {
-      if (req.url === "/landed") { res.writeHead(200, { "content-type": "text/html" }).end(page); return; }
-      res.writeHead(302, { Location: `http://0.0.0.0:${(redirecting.address() as AddressInfo).port}/landed` }).end();
-    });
-    await new Promise<void>((resolve) => { redirecting.listen(0, "127.0.0.1", resolve); });
-    try {
-      const result = await verifyRendered(`http://127.0.0.1:${(redirecting.address() as AddressInfo).port}/`, { root: cwd, viewports });
-      expect(result).toMatchObject({ status: "FAIL", screenshots: [] });
-      expect(result.checks).toHaveLength(1);
-      expect(result.checks[0].items?.[0]).toContain("navigated outside the local scope (http://0.0.0.0:");
-    } finally { redirecting.close(); }
-  }, 60_000);
   it("reports NOT_RUN, never a pass, when the project has no browser driver", async () => {
     const cwd = workspace({ "index.html": page });
-    const result = await verifyRendered(pathToFileURL(join(cwd, "index.html")).href, { root: cwd, tooling: { driver: null, axePath: null } });
+    const result = await verifyRendered(fileUrl(cwd), { root: cwd });
     expect(result).toMatchObject({ status: "NOT_RUN", checks: [] });
     expect(result.reason).toContain("Playwright is not installed");
   });
+  it("runs project code without this server's credentials", async () => {
+    process.env.NIBLET_TOKEN = "niblet_at_must_not_leak";
+    const cwd = projectWithFakeDriver('throw new Error("token=" + (process.env.NIBLET_TOKEN ? "present" : "absent") + " path=" + (process.env.PATH ? "kept" : "lost"));');
+    const result = await verifyRendered(fileUrl(cwd), { root: cwd });
+    expect(result.reason).toContain("token=absent path=kept");
+  });
+  it("stops a check that never finishes", async () => {
+    renderedPolicy.deadlineMs = 400;
+    const cwd = projectWithFakeDriver("return new Promise(() => {});");
+    const result = await verifyRendered(fileUrl(cwd), { root: cwd });
+    expect(result).toMatchObject({ status: "NOT_RUN", reason: expect.stringContaining("did not finish") });
+  });
+  it("is cancelled by the caller's signal", async () => {
+    const cwd = projectWithFakeDriver("return new Promise(() => {});");
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 100);
+    await expect(verifyRendered(fileUrl(cwd), { root: cwd, signal: controller.signal })).rejects.toMatchObject({ code: "CANCELLED" });
+  });
   it("finds clipped text, a broken image and an axe contrast failure in a real browser", async () => {
-    const cwd = workspace({ "index.html": page });
-    const result = await verifyRendered(pathToFileURL(join(cwd, "index.html")).href, { root: cwd, viewports: [{ name: "desktop", width: 1280, height: 800 }] });
-    if (result.status === "NOT_RUN") throw new Error(`no browser on this machine: ${result.reason}`);
+    const cwd = projectWithBrowser();
+    const result = real(await verifyRendered(fileUrl(cwd), { root: cwd, viewports: [{ name: "desktop", width: 1280, height: 800 }] }));
     const status = Object.fromEntries(result.checks.map((c) => [c.id, c]));
     expect(result.status).toBe("FAIL");
     expect(status["text-overflow"]).toMatchObject({ status: "FAIL", items: [expect.stringContaining("p.clip")] });
@@ -225,5 +245,30 @@ describe("verify_rendered", () => {
     expect(status["accessibility"].items?.join(" ")).toContain("color-contrast");
     expect(status["horizontal-overflow"].status).toBe("PASS");
     expect(result.screenshots[0].sha256).toMatch(/^[a-f0-9]{64}$/);
+  }, 60_000);
+  it("reports a server that is down as a page-load FAIL, not a tool error", async () => {
+    const cwd = projectWithBrowser();
+    const down = real(await verifyRendered("http://127.0.0.1:1/", { root: cwd, viewports: desktop }));
+    expect(down).toMatchObject({ status: "FAIL", screenshots: [], checks: [{ id: "page-load", status: "FAIL" }] });
+  }, 60_000);
+  it("follows a redirect that stays local and refuses one that leaves, before the other host is contacted", async () => {
+    const cwd = projectWithBrowser();
+    let outsideHits = 0;
+    // 0.0.0.0 reaches this machine but is not a loopback name: it stands in for a remote host.
+    const outside = await listen((_req, res) => { outsideHits++; res.writeHead(200, { "content-type": "text/html" }).end(page); }, "0.0.0.0");
+    const local = await listen((req, res) => {
+      if (req.url === "/landed") { res.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><html lang=en><title>ok</title><main><h1>Landed</h1></main>"); return; }
+      res.writeHead(302, { Location: req.url === "/stay" ? "/landed" : `http://0.0.0.0:${outside.port}/` }).end();
+    }, "127.0.0.1");
+    try {
+      const stays = real(await verifyRendered(`http://127.0.0.1:${local.port}/stay`, { root: cwd, viewports: desktop }));
+      expect(stays.checks.find((c) => c.id === "page-load")?.status).toBe("PASS");
+      expect(stays.screenshots).toHaveLength(1);
+      const leaves = await verifyRendered(`http://127.0.0.1:${local.port}/leave`, { root: cwd, viewports: desktop });
+      expect(leaves).toMatchObject({ status: "FAIL", screenshots: [] });
+      expect(leaves.checks).toHaveLength(1);
+      expect(leaves.checks[0].items?.[0]).toContain(`outside the local scope was refused: http://0.0.0.0:${outside.port}/`);
+      expect(outsideHits).toBe(0);
+    } finally { local.close(); outside.close(); }
   }, 60_000);
 });

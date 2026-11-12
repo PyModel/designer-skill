@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
@@ -69,6 +69,11 @@ try {
   const finding = gate.structuredContent.findings.find((f) => f.antipattern === 'low-contrast');
   assert(finding && finding.line === 2, 'static-html engine ran from the installed tarball (low-contrast at line 2)');
   assert.equal(gate.structuredContent.ruleCoverage.find((c) => c.rule === 'low-contrast').status, 'RAN');
+  // The rendered check's worker ships in the tarball and starts; this project has no Playwright, so it must say NOT_RUN.
+  const rendered = await client.callTool({ name: 'verify_rendered', arguments: { cwd: project, url: pathToFileURL(join(project, 'index.html')).href } });
+  assert.notEqual(rendered.isError, true, JSON.stringify(rendered.content));
+  assert.equal(rendered.structuredContent.status, 'NOT_RUN');
+  assert.match(rendered.structuredContent.reason, /Playwright is not installed/);
   const scan = await client.callTool({ name: 'detect_antipatterns', arguments: { cwd: project, target: '.' } });
   assert.equal(scan.structuredContent.scannedFiles[0].engine, 'static-html');
 

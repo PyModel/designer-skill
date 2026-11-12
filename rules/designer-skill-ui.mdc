@@ -11,11 +11,11 @@ For UI, layout, component, page or visual design work:
 1. Call `get_preflight_brief`. Audits and plans do not authorize edits.
 2. Call `load_project_context` with the absolute project root (`cwd`). Inspect existing tokens, components and states before choosing a direction.
 3. Call `dispatch_intent` and load only the references it recommends with `get_reference` (normally 1–4).
-4. Bounded repairs preserve the existing identity: skip direction ceremony, or call `validate_design_direction` with `mode: "preserve"`. For a new direction, call it with:
+4. Bounded repairs preserve the existing identity: skip direction ceremony, or call `validate_design_direction` with `mode: "preserve"`. Every call needs:
    - `register`: `brand` or `product`
    - `designRead`: 20+ characters on this surface, audience and visual language
-   - `contextSources`: the project files you actually inspected (required, 1–32)
-   - optional: `aesthetic`, `typographyDirection`, `layoutFamilies`, `designVariance` / `motionIntensity` / `visualDensity` (whole numbers 1–10)
+   - `contextSources`: the project files you actually inspected (1–32)
+   A new direction (the default `mode: "change"`) also needs `aesthetic`, `typographyDirection` and distinct `layoutFamilies`; `designVariance` / `motionIntensity` / `visualDensity` (whole numbers 1–10) are optional.
    A PASS validates inputs only.
 5. Make the smallest coherent authorized change.
 6. Call `review_and_gate` with `cwd` and the changed files as `target`.
