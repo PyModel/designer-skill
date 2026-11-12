@@ -92,7 +92,7 @@ command -v claude >/dev/null 2>&1 || die "'claude' CLI not found; it validates t
 RELEASE_FILES=(
   designer-skill-mcp/package.json designer-skill-mcp/package-lock.json designer-skill-mcp/server.json
   .claude-plugin/plugin.json .codex-plugin/plugin.json .cursor-plugin/plugin.json
-  mcp.json README.md commands/designer-setup.md
+  mcp.json README.md commands/designer-setup.md docs/blog/integrating-designer-skill-with-pythinker.md
 )
 # Until the release commit exists, any failure restores the version files so a
 # rerun starts from the same clean tree.
