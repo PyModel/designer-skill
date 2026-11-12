@@ -87,7 +87,7 @@ None of these is a tool error, and no other tool depends on the catalogue: the a
 
 A client that declares no MCP roots and passes no `--root` gets `SCOPE_VIOLATION` from the file-reading tools; add `--root`.
 
-Tool failures return `isError` with `structuredContent.error = { code, message, details? }`; a schema-invalid call is `INPUT_INVALID`.
+Tool failures return `isError` with one text block holding JSON `{ "code", "message", "details"? }` (no `structuredContent`); a schema-invalid call is `INPUT_INVALID`.
 
 ## HTTP transport
 
